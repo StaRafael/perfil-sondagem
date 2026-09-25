@@ -548,10 +548,36 @@
         '</div>'+
       '</div>';
   }
+  // Espera as imagens do mapa (os 9 blocos do OpenStreetMap) realmente
+  // baixarem da internet antes de mandar imprimir. Isso é importante porque
+  // window.print() não espera imagem nenhuma carregar sozinho — como as
+  // imagens do mapa acabaram de ser inseridas na página (vêm de fora, da
+  // internet, na hora de gerar a folha), sem essa espera o PDF/impressão
+  // podia sair com o mapa em branco mesmo a internet estando ok, só porque a
+  // imagem ainda não tinha chegado a tempo. Tem um limite máximo de espera
+  // (4s) pra não travar a impressão caso a internet esteja mesmo fora do ar.
+  function aguardarImagensDoMapa(callback){
+    var imgs = Array.prototype.slice.call($('#print-sheet').querySelectorAll('img'));
+    if(!imgs.length){ callback(); return; }
+    var pendentes = imgs.length, terminou = false;
+    function pronto(){
+      if(terminou) return;
+      pendentes--;
+      if(pendentes<=0){ terminou = true; callback(); }
+    }
+    imgs.forEach(function(img){
+      if(img.complete){ pronto(); return; }
+      img.addEventListener('load', pronto, { once:true });
+      img.addEventListener('error', pronto, { once:true });
+    });
+    setTimeout(function(){ if(!terminou){ terminou = true; callback(); } }, 4000);
+  }
   function printSheet(){
     $('#print-sheet').innerHTML = buildPrintSheetHtml();
     document.body.classList.add('print-sheet-mode');
-    requestAnimationFrame(function(){ window.print(); });
+    aguardarImagensDoMapa(function(){
+      requestAnimationFrame(function(){ window.print(); });
+    });
   }
   window.addEventListener('afterprint', function(){ document.body.classList.remove('print-sheet-mode'); redrawLith(false); });
 
@@ -1268,6 +1294,7 @@
       '</svg>';
     var caption = endereco ? esc(endereco) : (lat.toFixed(6)+', '+lon.toFixed(6));
     return '<div class="ps-map">'+
+        '<div class="ps-map-title">Mapa de localização</div>'+
         '<div class="ps-map-viewport">'+
           '<div class="ps-map-grid" style="width:'+(TILE*3)+'px;height:'+(TILE*3)+'px;transform:translate('+offsetX.toFixed(1)+'px,'+offsetY.toFixed(1)+'px);">'+tilesHtml+'</div>'+
           marker+

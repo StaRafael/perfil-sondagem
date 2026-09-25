@@ -409,6 +409,7 @@
     flex:none;width:42mm;border:1px solid #1a1a1a;display:flex;flex-direction:column;
     background:#f4f4f4;overflow:hidden;
   }
+  .ps-map-title{font-size:9px;font-weight:700;letter-spacing:.05em;text-align:center;padding:3px 4px;border-bottom:1px solid #1a1a1a;background:#f4f4f4;text-transform:uppercase;}
   /* o mapa em si é composto de blocos ("tiles") reais do OpenStreetMap —
      ps-map-viewport é a "janelinha" (42mm x 42mm) que corta a vista, e
      ps-map-grid é a grade 3x3 de blocos por baixo, deslocada via
