@@ -28,6 +28,13 @@
   var currentDocId = null;
   var sessionDocs = []; // {id, data} das sondagens da empresa logada, carregadas da nuvem ao entrar
 
+  // Pra qual usuário a tela já foi carregada (perfil + empresa + lista de
+  // sondagens). Existe só pra evitar recarregar tudo — e apagar o que a
+  // pessoa está digitando — toda vez que o Supabase dispara o listener de
+  // autenticação de novo sem ter havido nenhum login novo de verdade (ver
+  // comentário completo perto do onAuthStateChange, lá embaixo).
+  var bootedForUserId = null;
+
   /* ---------- funções auxiliares ---------- */
   function $(sel,root){ return (root||document).querySelector(sel); }
   function $all(sel,root){ return Array.prototype.slice.call((root||document).querySelectorAll(sel)); }
@@ -1518,14 +1525,29 @@
   // login/logout — o supabase-js já entrega o estado atual assim que este
   // listener é registrado, sem precisar chamar getSession() à parte.
   sb.auth.onAuthStateChange(function(event, session){
-    if(session && session.user){
-      currentUser = session.user;
-      loadProfileAndBoot();
-    } else {
+    if(!session || !session.user){
+      bootedForUserId = null;
       currentUser = null; currentProfile = null; currentOrg = null;
       $('#rail-user').hidden = true;
       setAuthMode('login');
       showScreen('auth');
+      return;
     }
+    currentUser = session.user;
+    // O Supabase chama esse listener de novo em vários momentos que NÃO são
+    // um login novo — por exemplo, ele renova o token de acesso sozinho, em
+    // segundo plano, sempre que a aba volta a ficar visível depois de um
+    // tempo (a pessoa trocou de aplicativo/aba e voltou) ou quando o token
+    // está perto de expirar. Antes, qualquer um desses disparos recarregava
+    // a tela inteira (loadProfileAndBoot -> loadCloudSondagens), reescrevendo
+    // o formulário com o que já estava salvo na nuvem — e isso apagava
+    // qualquer coisa que a pessoa estivesse digitando e ainda não tivesse
+    // clicado em "Salvar". Por isso só recarrega de verdade quando é um
+    // usuário diferente do que já está carregado na tela (um login de
+    // verdade); disparos repetidos do mesmo usuário só atualizam quem está
+    // logado, sem mexer em nada que já está na tela.
+    if(bootedForUserId === session.user.id) return;
+    bootedForUserId = session.user.id;
+    loadProfileAndBoot();
   });
 })();
