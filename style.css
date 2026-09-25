@@ -310,6 +310,10 @@
   .geo-map-link:hover{text-decoration:underline;}
   .geo-hint{font-size:11.5px;color:var(--ink-faint);min-height:14px;}
   .geo-hint.is-error{color:var(--warn);}
+  .geo-endereco{
+    font-size:12.5px;font-weight:600;color:var(--ink);background:#fff;
+    border:1px solid var(--line);border-radius:var(--radius-s);padding:7px 10px;
+  }
 
   .photo-box{
     display:flex;align-items:center;justify-content:center;overflow:hidden;
@@ -405,10 +409,20 @@
     flex:none;width:42mm;border:1px solid #1a1a1a;display:flex;flex-direction:column;
     background:#f4f4f4;overflow:hidden;
   }
-  .ps-map img{width:100%;height:42mm;object-fit:cover;display:block;}
+  /* o mapa em si é composto de blocos ("tiles") reais do OpenStreetMap —
+     ps-map-viewport é a "janelinha" (42mm x 42mm) que corta a vista, e
+     ps-map-grid é a grade 3x3 de blocos por baixo, deslocada via
+     transform:translate(...) (calculado no script.js) pra deixar o ponto
+     exato da sondagem sempre centralizado atrás do marcador vermelho. */
+  .ps-map-viewport{
+    position:relative;width:42mm;height:42mm;overflow:hidden;background:#e5e5e5;
+  }
+  .ps-map-grid{position:absolute;left:0;top:0;}
+  .ps-map-grid img{position:absolute;display:block;}
   .ps-map-coords{
     font-family:var(--font-mono);font-size:7.5px;text-align:center;color:#444;
     padding:3px 4px;border-top:1px solid #ccc;background:#fff;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   }
   .ps-map-empty{
     height:42mm;align-items:center;justify-content:center;text-align:center;padding:8px;

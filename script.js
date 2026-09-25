@@ -516,18 +516,16 @@
 
     // Mapa do local: só dá pra desenhar se a sondagem já tem coordenadas
     // salvas (campo "Coordenadas do local", preenchido pelo botão de GPS ou
-    // digitado à mão). Usa um serviço gratuito de mapa estático (OpenStreetMap)
-    // — precisa de internet no momento de imprimir, mas não exige nenhuma
-    // chave/cadastro. Sem coordenadas, mostra uma caixa vazia com um aviso.
+    // digitado à mão). Monta o mini-mapa com blocos reais do OpenStreetMap
+    // (buildMiniMapHtml, acima) — precisa de internet no momento de imprimir,
+    // mas não exige nenhuma chave/cadastro. A legenda embaixo do mapa mostra
+    // o nome do lugar (rua/bairro/cidade), quando já foi encontrado, ou as
+    // coordenadas quando ainda não. Sem coordenadas, mostra uma caixa vazia
+    // com um aviso.
     var mapHtml = '';
     var lat = parseNum((st.local||{}).latitude), lon = parseNum((st.local||{}).longitude);
     if(lat!=null && lon!=null){
-      var mapUrl = 'https://staticmap.openstreetmap.de/staticmap.php?center='+lat.toFixed(6)+','+lon.toFixed(6)+
-        '&zoom=16&size=400x400&maptype=mapnik&markers='+lat.toFixed(6)+','+lon.toFixed(6)+',red-pushpin';
-      mapHtml = '<div class="ps-map">'+
-          '<img src="'+esc(mapUrl)+'" alt="Mapa do local da sondagem">'+
-          '<div class="ps-map-coords">'+lat.toFixed(6)+', '+lon.toFixed(6)+'</div>'+
-        '</div>';
+      mapHtml = buildMiniMapHtml(lat, lon, (st.local||{}).endereco);
     } else {
       mapHtml = '<div class="ps-map ps-map-empty"><span>Coordenadas do local não registradas</span></div>';
     }
@@ -891,10 +889,13 @@
         empresa: $('#f-empresa').value, cliente: $('#f-cliente').value, escala: $('#f-escala').value,
         desenhadoPor: $('#f-desenhadoPor').value, verificadoPor: $('#f-verificadoPor').value
       },
-      // Coordenadas do local e caminho da foto no Supabase Storage (o arquivo em
-      // si não fica aqui, só a referência — ver uploadFotoLocal()/loadFotoPreview()).
+      // Coordenadas do local, o endereço encontrado a partir delas (busca
+      // automática, ver buscarEnderecoPorCoordenadas()) e o caminho da foto
+      // no Supabase Storage (o arquivo em si não fica aqui, só a referência
+      // — ver uploadFotoLocal()/loadFotoPreview()).
       local:{
         latitude: $('#f-latitude').value, longitude: $('#f-longitude').value,
+        endereco: window.__enderecoTexto || '',
         fotoPath: window.__fotoPath || null
       },
       isExample: !!(window.__isExample)
@@ -935,6 +936,7 @@
     $('#f-latitude').value = local.latitude||''; $('#f-longitude').value = local.longitude||'';
     updateGeoMapLink();
     setGeoStatus('');
+    setEnderecoTexto(local.endereco||'');
     renderFotoPreview(local.fotoPath||null);
 
     window.__isExample = !!d.isExample;
@@ -1163,10 +1165,115 @@
       markDirty();
       setGeoStatus('Localização capturada (precisão de aproximadamente '+Math.round(acc)+' m).');
       btn.disabled = false;
+      buscarEnderecoPorCoordenadas(lat, lon);
     }, function(err){
       setGeoStatus(traduzErroGeo(err), true);
       btn.disabled = false;
     }, { enableHighAccuracy:true, timeout:12000, maximumAge:0 });
+  }
+
+  /* ---------- nome do local (busca de endereço a partir da coordenada) ----------
+     Usa o Nominatim, o serviço de busca de endereços do próprio OpenStreetMap
+     — gratuito, sem precisar de cadastro nem chave de API. Só é chamado
+     quando a coordenada muda de verdade (depois do GPS, ou quando a pessoa
+     termina de editar um dos campos manualmente), nunca a cada letra
+     digitada, porque esse serviço é de uso livre mas moderado. */
+  function setEnderecoTexto(texto){
+    window.__enderecoTexto = texto||'';
+    var el = $('#geo-endereco');
+    if(texto){ el.textContent = texto; el.hidden = false; }
+    else { el.textContent=''; el.hidden = true; }
+  }
+  var enderecoBuscaId = 0;
+  function buscarEnderecoPorCoordenadas(lat, lon){
+    if(lat==null || lon==null || isNaN(lat) || isNaN(lon)) return;
+    var minhaBusca = ++enderecoBuscaId;
+    var url = 'https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat='+lat+'&lon='+lon+'&zoom=17&addressdetails=1';
+    fetch(url, { headers: { 'Accept':'application/json' } }).then(function(res){
+      if(!res.ok) throw new Error('nominatim '+res.status);
+      return res.json();
+    }).then(function(json){
+      if(minhaBusca !== enderecoBuscaId) return; // a coordenada já mudou de novo enquanto essa busca ainda ia — descarta a resposta velha
+      var a = json && json.address || {};
+      // Monta um endereço curto (rua + bairro/cidade) em vez do "display_name"
+      // completo do Nominatim, que costuma vir enorme (com CEP, país, etc.).
+      var partes = [];
+      var rua = a.road || a.pedestrian || a.footway || '';
+      if(rua) partes.push(a.house_number ? (rua+', '+a.house_number) : rua);
+      var bairro = a.suburb || a.neighbourhood || a.village || '';
+      if(bairro) partes.push(bairro);
+      var cidade = a.city || a.town || a.municipality || '';
+      var estado = a.state_code || a['ISO3166-2-lvl4'] || '';
+      var cidadeUf = cidade ? (estado ? cidade+'/'+estado.replace(/^BR-/,'') : cidade) : '';
+      if(cidadeUf) partes.push(cidadeUf);
+      var texto = partes.length ? partes.join(' · ') : (json.display_name||'');
+      setEnderecoTexto(texto);
+    }).catch(function(){
+      if(minhaBusca !== enderecoBuscaId) return;
+      // Sem endereço encontrado (sem internet, serviço fora do ar, etc.) não é
+      // um erro grave — as coordenadas continuam salvas normalmente, só não
+      // aparece o nome do lugar. Não interrompe o preenchimento por isso.
+      setEnderecoTexto('');
+    });
+  }
+  // Dispara a busca de endereço quando a pessoa termina de editar (sai do
+  // campo) latitude ou longitude na mão, e as duas já têm um número válido.
+  function buscarEnderecoSeCoordenadasValidas(){
+    var lat = parseNum($('#f-latitude').value), lon = parseNum($('#f-longitude').value);
+    if(lat!=null && lon!=null) buscarEnderecoPorCoordenadas(lat, lon);
+    else setEnderecoTexto('');
+  }
+
+  /* ---------- mini-mapa da folha impressa (blocos reais do OpenStreetMap) ----------
+     A tentativa anterior usava um serviço pronto de "mapa estático"
+     (staticmap.openstreetmap.de) que se mostrou pouco confiável — às vezes
+     desenhava só o marcador (um círculo) sobre um fundo cinza, sem o mapa de
+     verdade por baixo. Em vez disso, montamos o mini-mapa nós mesmos: pegamos
+     os 9 blocos de imagem ("tiles") do servidor oficial do OpenStreetMap ao
+     redor do ponto da sondagem e os posicionamos lado a lado (grade 3x3),
+     deslocando o conjunto todo (via transform:translate) até o ponto exato
+     ficar embaixo do marcador vermelho, sempre centralizado. */
+  var MM_TO_PX = 96/25.4; // 1mm em pixels de CSS — proporção fixa (tela e impressão/PDF usam o mesmo valor)
+  function lonLatParaTileFrac(lat, lon, z){
+    var n = Math.pow(2, z);
+    var x = (lon + 180) / 360 * n;
+    var latRad = lat * Math.PI / 180;
+    var y = (1 - Math.log(Math.tan(latRad) + 1/Math.cos(latRad)) / Math.PI) / 2 * n;
+    return { x: x, y: y };
+  }
+  function buildMiniMapHtml(lat, lon, endereco){
+    var Z = 16, TILE = 256, VP_MM = 42;
+    var vpPx = VP_MM * MM_TO_PX;
+    var frac = lonLatParaTileFrac(lat, lon, Z);
+    var n = Math.pow(2, Z);
+    var tx0 = Math.floor(frac.x), ty0 = Math.floor(frac.y);
+    var originTx = tx0 - 1, originTy = ty0 - 1;
+    var markerPxX = (frac.x - originTx) * TILE;
+    var markerPxY = (frac.y - originTy) * TILE;
+    var tilesHtml = '';
+    for(var row=0; row<3; row++){
+      for(var col=0; col<3; col++){
+        var ty = originTy + row;
+        if(ty < 0 || ty >= n) continue; // fora do mapa (perto dos polos) — esse bloco não existe
+        var tx = ((originTx + col) % n + n) % n; // dá a volta no mundo (longitude é circular)
+        var url = 'https://tile.openstreetmap.org/'+Z+'/'+tx+'/'+ty+'.png';
+        tilesHtml += '<img src="'+url+'" alt="" style="left:'+(col*TILE)+'px;top:'+(row*TILE)+'px;width:'+TILE+'px;height:'+TILE+'px;">';
+      }
+    }
+    var offsetX = (vpPx/2) - markerPxX;
+    var offsetY = (vpPx/2) - markerPxY;
+    var marker = '<svg width="20" height="28" viewBox="0 0 20 28" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-100%);filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.5));">'+
+        '<path d="M10 0C4.5 0 0 4.5 0 10c0 7.6 10 18 10 18s10-10.4 10-18C20 4.5 15.5 0 10 0z" fill="#D32F2F"/>'+
+        '<circle cx="10" cy="10" r="4" fill="#fff"/>'+
+      '</svg>';
+    var caption = endereco ? esc(endereco) : (lat.toFixed(6)+', '+lon.toFixed(6));
+    return '<div class="ps-map">'+
+        '<div class="ps-map-viewport">'+
+          '<div class="ps-map-grid" style="width:'+(TILE*3)+'px;height:'+(TILE*3)+'px;transform:translate('+offsetX.toFixed(1)+'px,'+offsetY.toFixed(1)+'px);">'+tilesHtml+'</div>'+
+          marker+
+        '</div>'+
+        '<div class="ps-map-coords">'+caption+'</div>'+
+      '</div>';
   }
 
   /* ---------- foto do local (Supabase Storage) ----------
@@ -1396,6 +1503,8 @@
   $('#btn-geo').addEventListener('click', usarMinhaLocalizacao);
   $('#f-latitude').addEventListener('input', updateGeoMapLink);
   $('#f-longitude').addEventListener('input', updateGeoMapLink);
+  $('#f-latitude').addEventListener('change', buscarEnderecoSeCoordenadasValidas);
+  $('#f-longitude').addEventListener('change', buscarEnderecoSeCoordenadasValidas);
   $('#btn-foto').addEventListener('click', function(){ $('#file-foto').click(); });
   $('#file-foto').addEventListener('change', selecionarFoto);
   $('#btn-foto-remover').addEventListener('click', removerFoto);
