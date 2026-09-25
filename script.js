@@ -556,6 +556,27 @@
   // podia sair com o mapa em branco mesmo a internet estando ok, só porque a
   // imagem ainda não tinha chegado a tempo. Tem um limite máximo de espera
   // (4s) pra não travar a impressão caso a internet esteja mesmo fora do ar.
+  // Espera uma imagem carregar — se ela tiver um "data-fallback" (caso dos
+  // blocos do mapa) e a fonte principal falhar, tenta a fonte alternativa
+  // antes de desistir, e só avisa que "terminou" depois dessa segunda
+  // tentativa também se resolver (sucesso ou falha), nunca antes.
+  function aguardarUmaImagem(img, avisar){
+    if(img.complete && img.naturalWidth > 0){ avisar(); return; }
+    var jaTentouFallback = false;
+    function limpar(){ img.removeEventListener('load', onLoad); img.removeEventListener('error', onErro); }
+    function onLoad(){ limpar(); avisar(); }
+    function onErro(){
+      var fallback = img.getAttribute('data-fallback');
+      if(fallback && !jaTentouFallback){
+        jaTentouFallback = true;
+        img.src = fallback; // dispara onLoad ou onErro de novo, agora pra valer
+        return;
+      }
+      limpar(); avisar(); // já tentou tudo — segue em frente mesmo sem essa imagem
+    }
+    img.addEventListener('load', onLoad);
+    img.addEventListener('error', onErro);
+  }
   function aguardarImagensDoMapa(callback){
     var imgs = Array.prototype.slice.call($('#print-sheet').querySelectorAll('img'));
     if(!imgs.length){ callback(); return; }
@@ -565,11 +586,7 @@
       pendentes--;
       if(pendentes<=0){ terminou = true; callback(); }
     }
-    imgs.forEach(function(img){
-      if(img.complete){ pronto(); return; }
-      img.addEventListener('load', pronto, { once:true });
-      img.addEventListener('error', pronto, { once:true });
-    });
+    imgs.forEach(function(img){ aguardarUmaImagem(img, pronto); });
     setTimeout(function(){ if(!terminou){ terminou = true; callback(); } }, 4000);
   }
   function printSheet(){
@@ -1250,15 +1267,26 @@
     else setEnderecoTexto('');
   }
 
-  /* ---------- mini-mapa da folha impressa (blocos reais do OpenStreetMap) ----------
+  /* ---------- mini-mapa da folha impressa (blocos reais de mapa) ----------
      A tentativa anterior usava um serviço pronto de "mapa estático"
      (staticmap.openstreetmap.de) que se mostrou pouco confiável — às vezes
      desenhava só o marcador (um círculo) sobre um fundo cinza, sem o mapa de
      verdade por baixo. Em vez disso, montamos o mini-mapa nós mesmos: pegamos
-     os 9 blocos de imagem ("tiles") do servidor oficial do OpenStreetMap ao
-     redor do ponto da sondagem e os posicionamos lado a lado (grade 3x3),
-     deslocando o conjunto todo (via transform:translate) até o ponto exato
-     ficar embaixo do marcador vermelho, sempre centralizado. */
+     os 9 blocos de imagem ("tiles") ao redor do ponto da sondagem e os
+     posicionamos lado a lado (grade 3x3), deslocando o conjunto todo (via
+     transform:translate) até o ponto exato ficar embaixo do marcador
+     vermelho, sempre centralizado.
+     Os blocos vêm da CARTO (basemaps.cartocdn.com) — um mapa "clarinho",
+     bom pra imprimir, construído em cima dos dados do OpenStreetMap mas
+     servido por uma CDN feita justamente pra ser usada assim, embutida em
+     sites/apps, sem chave nem cadastro. Trocamos o servidor oficial de tiles
+     do próprio OpenStreetMap.org por esse porque aquele é destinado a uso
+     leve/manual (alguém navegando o site openstreetmap.org) e costuma
+     bloquear ou recusar carregar tiles de aplicativos de terceiros com uso
+     repetido, o que é provavelmente o motivo do mapa ainda estar aparecendo
+     em branco em alguns testes. Se por algum motivo a CARTO falhar na hora
+     (sem internet, fora do ar), cada bloco tenta automaticamente o servidor
+     do OpenStreetMap como plano B, antes de desistir. */
   var MM_TO_PX = 96/25.4; // 1mm em pixels de CSS — proporção fixa (tela e impressão/PDF usam o mesmo valor)
   function lonLatParaTileFrac(lat, lon, z){
     var n = Math.pow(2, z);
@@ -1282,13 +1310,15 @@
         var ty = originTy + row;
         if(ty < 0 || ty >= n) continue; // fora do mapa (perto dos polos) — esse bloco não existe
         var tx = ((originTx + col) % n + n) % n; // dá a volta no mundo (longitude é circular)
-        var url = 'https://tile.openstreetmap.org/'+Z+'/'+tx+'/'+ty+'.png';
-        tilesHtml += '<img src="'+url+'" alt="" style="left:'+(col*TILE)+'px;top:'+(row*TILE)+'px;width:'+TILE+'px;height:'+TILE+'px;">';
+        var url = 'https://basemaps.cartocdn.com/light_all/'+Z+'/'+tx+'/'+ty+'.png';
+        var fallbackUrl = 'https://tile.openstreetmap.org/'+Z+'/'+tx+'/'+ty+'.png';
+        tilesHtml += '<img src="'+url+'" data-fallback="'+fallbackUrl+'" alt="" '+
+          'style="left:'+(col*TILE)+'px;top:'+(row*TILE)+'px;width:'+TILE+'px;height:'+TILE+'px;">';
       }
     }
     var offsetX = (vpPx/2) - markerPxX;
     var offsetY = (vpPx/2) - markerPxY;
-    var marker = '<svg width="20" height="28" viewBox="0 0 20 28" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-100%);filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.5));">'+
+    var marker = '<svg class="ps-map-marker" width="20" height="28" viewBox="0 0 20 28" style="position:absolute;left:50%;top:50%;width:20px;height:28px;transform:translate(-50%,-100%);filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.5));">'+
         '<path d="M10 0C4.5 0 0 4.5 0 10c0 7.6 10 18 10 18s10-10.4 10-18C20 4.5 15.5 0 10 0z" fill="#D32F2F"/>'+
         '<circle cx="10" cy="10" r="4" fill="#fff"/>'+
       '</svg>';
