@@ -1276,17 +1276,13 @@
      posicionamos lado a lado (grade 3x3), deslocando o conjunto todo (via
      transform:translate) até o ponto exato ficar embaixo do marcador
      vermelho, sempre centralizado.
-     Os blocos vêm da CARTO (basemaps.cartocdn.com) — um mapa "clarinho",
-     bom pra imprimir, construído em cima dos dados do OpenStreetMap mas
-     servido por uma CDN feita justamente pra ser usada assim, embutida em
-     sites/apps, sem chave nem cadastro. Trocamos o servidor oficial de tiles
-     do próprio OpenStreetMap.org por esse porque aquele é destinado a uso
-     leve/manual (alguém navegando o site openstreetmap.org) e costuma
-     bloquear ou recusar carregar tiles de aplicativos de terceiros com uso
-     repetido, o que é provavelmente o motivo do mapa ainda estar aparecendo
-     em branco em alguns testes. Se por algum motivo a CARTO falhar na hora
-     (sem internet, fora do ar), cada bloco tenta automaticamente o servidor
-     do OpenStreetMap como plano B, antes de desistir. */
+     Os blocos vêm do World Imagery da Esri (foto de satélite/aérea de
+     verdade, tipo "visão de satélite" do Google Maps) — um serviço público,
+     gratuito e sem chave/cadastro, muito usado justamente pra esse tipo de
+     mapinha embutido em sites e aplicativos. Se por algum motivo ele falhar
+     na hora (sem internet, fora do ar), cada bloco tenta automaticamente um
+     mapa de ruas (CARTO) como plano B, antes de desistir — assim a folha não
+     fica sem nenhum mapa. */
   var MM_TO_PX = 96/25.4; // 1mm em pixels de CSS — proporção fixa (tela e impressão/PDF usam o mesmo valor)
   function lonLatParaTileFrac(lat, lon, z){
     var n = Math.pow(2, z);
@@ -1296,7 +1292,7 @@
     return { x: x, y: y };
   }
   function buildMiniMapHtml(lat, lon, endereco){
-    var Z = 16, TILE = 256, VP_MM = 42;
+    var Z = 18, TILE = 256, VP_MM = 42; // zoom 18: dá pra reconhecer prédios/telhados individuais, como numa foto de satélite de perto
     var vpPx = VP_MM * MM_TO_PX;
     var frac = lonLatParaTileFrac(lat, lon, Z);
     var n = Math.pow(2, Z);
@@ -1310,8 +1306,9 @@
         var ty = originTy + row;
         if(ty < 0 || ty >= n) continue; // fora do mapa (perto dos polos) — esse bloco não existe
         var tx = ((originTx + col) % n + n) % n; // dá a volta no mundo (longitude é circular)
-        var url = 'https://basemaps.cartocdn.com/light_all/'+Z+'/'+tx+'/'+ty+'.png';
-        var fallbackUrl = 'https://tile.openstreetmap.org/'+Z+'/'+tx+'/'+ty+'.png';
+        // A Esri usa a ordem z/y/x na URL (ao contrário do padrão z/x/y da maioria dos outros serviços de mapa)
+        var url = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/'+Z+'/'+ty+'/'+tx;
+        var fallbackUrl = 'https://basemaps.cartocdn.com/light_all/'+Z+'/'+tx+'/'+ty+'.png';
         tilesHtml += '<img src="'+url+'" data-fallback="'+fallbackUrl+'" alt="" '+
           'style="left:'+(col*TILE)+'px;top:'+(row*TILE)+'px;width:'+TILE+'px;height:'+TILE+'px;">';
       }
