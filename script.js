@@ -272,10 +272,16 @@
     var tuboFiltro = parseNum($('#f-tuboFiltro').value);
     var hasPoco = tuboLiso!=null && tuboFiltro!=null && (tuboLiso+tuboFiltro)>0;
 
-    var vbW = 320, marginTop=36, marginBottom=14, drawH=420;
+    // O espaço entre a coluna gráfica e os rótulos de litologia (labelX) precisa
+    // ser largo o bastante pra caber o rótulo do N.A. (ex.: "N.A. 1,15m"), que
+    // fica desenhado logo à direita da coluna — do contrário os dois textos se
+    // sobrepõem (foi o que aconteceu antes: "N.A." ficava por cima da primeira
+    // camada de litologia). O vbW cresce no mesmo tanto pra manter a largura do
+    // texto de litologia igual à de antes, em vez de espremê-la.
+    var vbW = 380, marginTop=36, marginBottom=14, drawH=420;
     var vbH = marginTop+drawH+marginBottom;
     var scale = drawH/maxDepth;
-    var colX=62, colW=60, labelX=colX+colW+14, labelW=vbW-labelX-8;
+    var colX=62, colW=60, labelX=colX+colW+74, labelW=vbW-labelX-8;
     var wellW=16, wellX=colX+(colW-wellW)/2;
 
     var sondagemNo=$('#f-sondagemNo').value, pocoNo=$('#f-pocoNo').value;
@@ -481,14 +487,16 @@
 
     // "Empresa responsável" mostra o próprio logo da empresa, como no quadro de
     // identificação de uma prancha real, em vez de texto digitado.
-    var empresaCellHtml = '<span class="pc-label">Empresa responsável</span>'+
-      '<img src="'+LOGO_DATA_URI+'" alt="'+esc(c.empresa||'Empresa')+'" style="display:block;height:26px;width:auto;margin-top:2px;">';
+    // Só a logo, sem o rótulo "Empresa responsável" escrito em cima — a logo
+    // já deixa claro de quem é a ficha.
+    var empresaCellHtml =
+      '<img src="'+LOGO_DATA_URI+'" alt="'+esc(c.empresa||'Empresa')+'" style="display:block;height:30px;width:auto;">';
 
     var carimboRows = [
       [null, null, 'Cliente', c.cliente||'—'],
       ['Obra', m.obra||'—', 'Sondagem / Poço', (m.sondagemNo||'—')+' / '+(m.pocoNo||'—')],
-      ['Técnico de campo', m.tecnico||'—', 'Data', fmtDateBR(m.dataInicio)||'—'],
-      ['Escala', c.escala||'—', 'Desenhado por', c.desenhadoPor||'—'],
+      ['Técnico de campo', m.tecnico||'—', 'Data de início', fmtDateBR(m.dataInicio)||'—'],
+      ['Desenhado por', c.desenhadoPor||'—', 'Data de término', fmtDateBR(m.dataTermino)||'—'],
       ['Verificado por', c.verificadoPor||'—', 'Folha', '1/1']
     ];
     var carimboHtml = '<table><tbody>'+carimboRows.map(function(r, idx){
@@ -499,6 +507,24 @@
 
     var titleId = [m.sondagemNo,m.pocoNo].filter(Boolean).join(' · ') || 'Sondagem';
 
+    // Mapa do local: só dá pra desenhar se a sondagem já tem coordenadas
+    // salvas (campo "Coordenadas do local", preenchido pelo botão de GPS ou
+    // digitado à mão). Usa um serviço gratuito de mapa estático (OpenStreetMap)
+    // — precisa de internet no momento de imprimir, mas não exige nenhuma
+    // chave/cadastro. Sem coordenadas, mostra uma caixa vazia com um aviso.
+    var mapHtml = '';
+    var lat = parseNum((st.local||{}).latitude), lon = parseNum((st.local||{}).longitude);
+    if(lat!=null && lon!=null){
+      var mapUrl = 'https://staticmap.openstreetmap.de/staticmap.php?center='+lat.toFixed(6)+','+lon.toFixed(6)+
+        '&zoom=16&size=400x400&maptype=mapnik&markers='+lat.toFixed(6)+','+lon.toFixed(6)+',red-pushpin';
+      mapHtml = '<div class="ps-map">'+
+          '<img src="'+esc(mapUrl)+'" alt="Mapa do local da sondagem">'+
+          '<div class="ps-map-coords">'+lat.toFixed(6)+', '+lon.toFixed(6)+'</div>'+
+        '</div>';
+    } else {
+      mapHtml = '<div class="ps-map ps-map-empty"><span>Coordenadas do local não registradas</span></div>';
+    }
+
     return ''+
       '<div class="ps-frame">'+
         '<div class="ps-header">'+
@@ -508,7 +534,7 @@
           '</div>'+
           '<div class="ps-header-id"><div>'+esc(titleId)+'</div><div>'+esc(m.obra||'')+'</div></div>'+
         '</div>'+
-        '<div class="ps-body">'+svgMarkup+'</div>'+
+        '<div class="ps-body">'+svgMarkup+mapHtml+'</div>'+
         '<div class="ps-foot">'+
           '<div class="ps-legend"><div class="ps-legend-title">LEGENDA</div>'+
             (legendItems.length ? '<div class="ps-legend-grid">'+legendRows+'</div>' : '<div class="ps-legend-note">Preencha a tabela de litologia para gerar a legenda.</div>')+

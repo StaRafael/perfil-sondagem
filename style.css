@@ -280,7 +280,7 @@
 
   .lith-col-card{border:1px solid var(--line);border-radius:var(--radius-s);padding:10px 8px 4px;background:var(--surface-sunken);}
   .lith-col-title{font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-soft);font-weight:600;margin-bottom:4px;padding-left:2px;}
-  #lith-svg-host svg{width:100%;height:auto;aspect-ratio:320/470;display:block;}
+  #lith-svg-host svg{width:100%;height:auto;aspect-ratio:380/470;display:block;}
   .lith-label-h{font-family:var(--font-sans);font-weight:600;font-size:10.6px;color:var(--ink);line-height:1.25;}
   .lith-label-s{font-family:var(--font-sans);font-size:9.6px;color:var(--ink-soft);line-height:1.25;}
   .lith-legend{margin-top:8px;padding-top:8px;border-top:1px solid var(--line);font-size:10.5px;color:var(--ink-soft);line-height:1.6;}
@@ -393,9 +393,26 @@
   .ps-header-id div:last-child{font-size:10px;font-weight:400;color:#444;margin-top:2px;}
   .ps-body{
     flex:1;border:1px solid #1a1a1a;display:flex;align-items:center;justify-content:center;
-    padding:10mm 6mm;min-height:0;
+    padding:10mm 6mm;min-height:0;gap:8mm;
   }
   .ps-body svg{height:100%;max-height:100%;width:auto;max-width:100%;}
+
+  /* mapa do local, ao lado do perfil — usa o espaço que antes ficava em
+     branco na "Folha do perfil" quando o desenho da coluna era mais estreito
+     que a área disponível. */
+  .ps-map{
+    flex:none;width:58mm;border:1px solid #1a1a1a;display:flex;flex-direction:column;
+    background:#f4f4f4;overflow:hidden;
+  }
+  .ps-map img{width:100%;height:58mm;object-fit:cover;display:block;}
+  .ps-map-coords{
+    font-family:var(--font-mono);font-size:8px;text-align:center;color:#444;
+    padding:3px 4px;border-top:1px solid #ccc;background:#fff;
+  }
+  .ps-map-empty{
+    height:58mm;align-items:center;justify-content:center;text-align:center;padding:8px;
+  }
+  .ps-map-empty span{font-size:8.5px;color:#777;}
   .ps-foot{display:flex;gap:8px;margin-top:8px;align-items:stretch;}
   .ps-legend{
     flex:1.1;border:1px solid #1a1a1a;padding:8px 12px;
