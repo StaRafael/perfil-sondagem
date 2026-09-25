@@ -127,7 +127,7 @@
           <div class="photo-card">
             <span class="glabel">Foto do local</span>
             <div class="photo-box" id="photo-box">
-              <img id="photo-preview" alt="Foto do local da sondagem" hidden>
+              <img id="photo-preview" alt="Foto do local da sondagem" title="Clique para ampliar" hidden>
               <div class="photo-placeholder" id="photo-placeholder">Nenhuma foto anexada</div>
             </div>
             <input type="file" id="file-foto" accept="image/*" capture="environment" style="display:none">
@@ -281,6 +281,12 @@
 </div>
 
 <div id="print-sheet"></div>
+
+<!-- Pop-up (lightbox) pra ver a foto do local ampliada, ao clicar nela -->
+<div class="foto-lightbox" id="foto-lightbox" hidden>
+  <button type="button" class="foto-lightbox-fechar" id="foto-lightbox-fechar" aria-label="Fechar">✕</button>
+  <img id="foto-lightbox-img" alt="Foto do local da sondagem, ampliada">
+</div>
 
 <div id="toast"></div>
 

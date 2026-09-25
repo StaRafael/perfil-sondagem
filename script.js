@@ -1347,6 +1347,7 @@
     $('#photo-preview').removeAttribute('src');
     $('#photo-placeholder').hidden = false;
     $('#btn-foto-remover').hidden = true;
+    if(!$('#foto-lightbox').hidden) fecharFotoLightbox(); // não deixa o pop-up aberto mostrando uma foto que já não existe mais
   }
   function showFotoUrl(url){
     var img = $('#photo-preview');
@@ -1562,6 +1563,24 @@
   $('#btn-foto').addEventListener('click', function(){ $('#file-foto').click(); });
   $('#file-foto').addEventListener('change', selecionarFoto);
   $('#btn-foto-remover').addEventListener('click', removerFoto);
+
+  // Pop-up (lightbox) da foto: clica na miniatura pra abrir ela ampliada,
+  // fecha clicando fora da foto, no X, ou apertando Esc.
+  function abrirFotoLightbox(){
+    var preview = $('#photo-preview');
+    if(!preview.src) return;
+    $('#foto-lightbox-img').src = preview.src;
+    $('#foto-lightbox').hidden = false;
+  }
+  function fecharFotoLightbox(){ $('#foto-lightbox').hidden = true; $('#foto-lightbox-img').removeAttribute('src'); }
+  $('#photo-preview').addEventListener('click', abrirFotoLightbox);
+  $('#foto-lightbox-fechar').addEventListener('click', fecharFotoLightbox);
+  $('#foto-lightbox').addEventListener('click', function(e){
+    if(e.target.id === 'foto-lightbox') fecharFotoLightbox(); // só fecha clicando no fundo, não na foto em si
+  });
+  document.addEventListener('keydown', function(e){
+    if(e.key === 'Escape' && !$('#foto-lightbox').hidden) fecharFotoLightbox();
+  });
 
   /* ---------- autenticação (login / cadastro / logout) ----------
      A tela do formulário (#app) só aparece depois que o Supabase confirma
