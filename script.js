@@ -943,15 +943,22 @@
         empresa: $('#f-empresa').value, cliente: $('#f-cliente').value, escala: $('#f-escala').value,
         desenhadoPor: $('#f-desenhadoPor').value, verificadoPor: $('#f-verificadoPor').value
       },
-      // Coordenadas do local, o endereço encontrado a partir delas (busca
+      // Coordenadas do local (em UTM/SIRGAS2000, como digitado na tela) +
+      // a latitude/longitude equivalente (derivada aqui na hora de salvar —
+      // é o que o mapinha da folha impressa e a busca de endereço usam por
+      // baixo dos panos), o endereço encontrado a partir delas (busca
       // automática, ver buscarEnderecoPorCoordenadas()) e o caminho da foto
       // no Supabase Storage (o arquivo em si não fica aqui, só a referência
       // — ver uploadFotoLocal()/loadFotoPreview()).
-      local:{
-        latitude: $('#f-latitude').value, longitude: $('#f-longitude').value,
-        endereco: window.__enderecoTexto || '',
-        fotoPath: window.__fotoPath || null
-      },
+      local:(function(){
+        var pos = latLonAtuais();
+        return {
+          utmE: $('#f-utm-e').value, utmN: $('#f-utm-n').value, utmZona: $('#f-utm-zona').value,
+          latitude: pos ? String(pos.lat) : '', longitude: pos ? String(pos.lon) : '',
+          endereco: window.__enderecoTexto || '',
+          fotoPath: window.__fotoPath || null
+        };
+      })(),
       isExample: !!(window.__isExample)
     };
   }
@@ -987,7 +994,17 @@
     $('#f-verificadoPor').value=carimbo.verificadoPor||'';
 
     var local = d.local||{};
-    $('#f-latitude').value = local.latitude||''; $('#f-longitude').value = local.longitude||'';
+    if(local.utmE || local.utmN || local.utmZona){
+      // sondagem já salva no formato novo (UTM) — usa direto
+      $('#f-utm-e').value = local.utmE||''; $('#f-utm-n').value = local.utmN||''; $('#f-utm-zona').value = local.utmZona||'';
+    } else if(local.latitude && local.longitude){
+      // sondagem salva antes desse recurso existir, só com lat/long — converte pra exibir em UTM
+      var latAntiga = parseNum(local.latitude), lonAntiga = parseNum(local.longitude);
+      if(latAntiga!=null && lonAntiga!=null) preencherUTM(latAntiga, lonAntiga);
+      else { $('#f-utm-e').value=''; $('#f-utm-n').value=''; $('#f-utm-zona').value=''; }
+    } else {
+      $('#f-utm-e').value=''; $('#f-utm-n').value=''; $('#f-utm-zona').value='';
+    }
     updateGeoMapLink();
     setGeoStatus('');
     setEnderecoTexto(local.endereco||'');
@@ -1250,21 +1267,134 @@
     });
   }
 
+  /* ---------- conversão de coordenadas: lat/long (GPS) <-> UTM SIRGAS 2000 ----------
+     O GPS do celular/navegador só fala em latitude/longitude (WGS84) — mas
+     quem faz sondagem no Brasil trabalha com coordenada UTM no datum SIRGAS
+     2000, que é o padrão oficial adotado no país (IBGE) pra esse tipo de
+     levantamento. Na prática, pra essa finalidade (posicionar um ponto num
+     mapa/relatório), SIRGAS2000 e WGS84 coincidem — a diferença entre os dois
+     é da ordem de centímetros, bem abaixo da precisão do GPS de um celular —
+     então convertemos com as fórmulas padrão de projeção UTM (elipsoide
+     GRS80, o mesmo do SIRGAS2000) sem precisar de nenhum serviço externo.
+     Isso é só o que aparece NA TELA — por baixo, o app continua guardando
+     também a latitude/longitude (ver collectState()), porque é isso que o
+     mapinha da folha impressa e a busca de endereço usam. */
+  var UTM_A = 6378137.0;              // semieixo maior do elipsoide GRS80 (SIRGAS2000)
+  var UTM_F = 1/298.257222101;        // achatamento do GRS80
+  var UTM_K0 = 0.9996;                // fator de escala padrão do UTM
+  function utmZonaDaLongitude(lon){ return Math.floor((lon+180)/6)+1; }
+  // lat/long (graus) -> {zona, easting, northing} — northing já no formato
+  // "hemisfério sul" (soma 10.000.000) quando a latitude é negativa.
+  function latLonParaUTM(lat, lon){
+    var e2 = UTM_F*(2-UTM_F), e4 = e2*e2, e6 = e4*e2, ep2 = e2/(1-e2);
+    var zona = utmZonaDaLongitude(lon);
+    var lonOrigemRad = ((zona-1)*6 - 180 + 3) * Math.PI/180;
+    var latRad = lat*Math.PI/180, lonRad = lon*Math.PI/180;
+    var senLat = Math.sin(latRad), cosLat = Math.cos(latRad), tanLat = Math.tan(latRad);
+    var N = UTM_A / Math.sqrt(1 - e2*senLat*senLat);
+    var T = tanLat*tanLat;
+    var C = ep2*cosLat*cosLat;
+    var A = cosLat*(lonRad - lonOrigemRad);
+    var M = UTM_A*(
+        (1 - e2/4 - 3*e4/64 - 5*e6/256)*latRad
+      - (3*e2/8 + 3*e4/32 + 45*e6/1024)*Math.sin(2*latRad)
+      + (15*e4/256 + 45*e6/1024)*Math.sin(4*latRad)
+      - (35*e6/3072)*Math.sin(6*latRad)
+    );
+    var easting = UTM_K0*N*(A + (1-T+C)*Math.pow(A,3)/6 + (5-18*T+T*T+72*C-58*ep2)*Math.pow(A,5)/120) + 500000;
+    var northing = UTM_K0*(M + N*tanLat*(A*A/2 + (5-T+9*C+4*C*C)*Math.pow(A,4)/24 + (61-58*T+T*T+600*C-330*ep2)*Math.pow(A,6)/720));
+    if(lat<0) northing += 10000000;
+    return { zona: zona, easting: easting, northing: northing };
+  }
+  // Interpreta o texto da "Zona UTM" digitado (ex.: "23S", "23K", "23") e
+  // devolve { zona, sul }. Aceita tanto o sufixo N/S (o mais usado no Brasil
+  // — é assim que o SIRGAS2000 nomeia oficialmente as zonas, ex. "23S") quanto
+  // a letra de faixa MGRS (K, L, M... — usada por alguns GPS de topografia),
+  // e também nenhuma letra, assumindo hemisfério sul (a imensa maioria dos
+  // casos, já que é uso no Brasil).
+  function interpretaZonaUtm(txt){
+    var m = /^(\d{1,2})\s*([A-Za-z]?)$/.exec(String(txt||'').trim());
+    if(!m) return null;
+    var zona = parseInt(m[1],10);
+    if(zona<1 || zona>60) return null;
+    var letra = m[2].toUpperCase();
+    var sul = true; // padrão: Brasil
+    if(letra==='N') sul = false;
+    else if(letra==='S') sul = true;
+    else if(letra && 'NPQRSTUVWX'.indexOf(letra)>=0) sul = false; // faixas MGRS do hemisfério norte
+    else if(letra && 'CDEFGHJKLM'.indexOf(letra)>=0) sul = true;  // faixas MGRS do hemisfério sul
+    return { zona: zona, sul: sul };
+  }
+  // UTM (easting, northing, zona, hemisfério) -> {lat, lon} em graus decimais
+  function utmParaLatLon(easting, northing, zona, sul){
+    var e2 = UTM_F*(2-UTM_F), e4 = e2*e2, e6 = e4*e2, ep2 = e2/(1-e2);
+    var e1 = (1-Math.sqrt(1-e2))/(1+Math.sqrt(1-e2));
+    var x = easting - 500000;
+    var y = sul ? northing - 10000000 : northing;
+    var M = y / UTM_K0;
+    var mu = M / (UTM_A*(1 - e2/4 - 3*e4/64 - 5*e6/256));
+    var phi1 = mu
+      + (3*e1/2 - 27*Math.pow(e1,3)/32)*Math.sin(2*mu)
+      + (21*e1*e1/16 - 55*Math.pow(e1,4)/32)*Math.sin(4*mu)
+      + (151*Math.pow(e1,3)/96)*Math.sin(6*mu)
+      + (1097*Math.pow(e1,4)/512)*Math.sin(8*mu);
+    var senPhi1 = Math.sin(phi1), cosPhi1 = Math.cos(phi1), tanPhi1 = Math.tan(phi1);
+    var N1 = UTM_A/Math.sqrt(1-e2*senPhi1*senPhi1);
+    var T1 = tanPhi1*tanPhi1;
+    var C1 = ep2*cosPhi1*cosPhi1;
+    var R1 = UTM_A*(1-e2)/Math.pow(1-e2*senPhi1*senPhi1, 1.5);
+    var D = x/(N1*UTM_K0);
+    var lat = phi1 - (N1*tanPhi1/R1)*(
+        D*D/2
+      - (5+3*T1+10*C1-4*C1*C1-9*ep2)*Math.pow(D,4)/24
+      + (61+90*T1+298*C1+45*T1*T1-252*ep2-3*C1*C1)*Math.pow(D,6)/720
+    );
+    var lon = (
+        D
+      - (1+2*T1+C1)*Math.pow(D,3)/6
+      + (5-2*C1+28*T1-3*C1*C1+8*ep2+24*T1*T1)*Math.pow(D,5)/120
+    )/cosPhi1;
+    var lonOrigem = (zona-1)*6 - 180 + 3;
+    return { lat: lat*180/Math.PI, lon: lonOrigem + lon*180/Math.PI };
+  }
+  function fmtUTM(n){ return n.toFixed(2).replace('.',','); }
+  // Preenche os campos de E/N/Zona na tela a partir de uma lat/long (usado
+  // pelo botão de GPS, e também pra "traduzir" sondagens antigas salvas só
+  // com lat/long, de antes desse recurso existir — ver renderForm()).
+  function preencherUTM(lat, lon){
+    var r = latLonParaUTM(lat, lon);
+    $('#f-utm-e').value = fmtUTM(r.easting);
+    $('#f-utm-n').value = fmtUTM(r.northing);
+    $('#f-utm-zona').value = r.zona + (lat<0 ? 'S' : 'N');
+  }
+  // Lê o que está digitado em E/N/Zona agora e devolve a lat/long
+  // correspondente (ou null se os campos ainda não formam uma coordenada
+  // válida) — é o que a busca de endereço, o link "Ver no mapa" e o
+  // collectState() (pro mapinha da folha impressa) usam por baixo dos panos.
+  function latLonAtuais(){
+    var e = parseNum($('#f-utm-e').value), n = parseNum($('#f-utm-n').value);
+    var zonaInfo = interpretaZonaUtm($('#f-utm-zona').value);
+    if(e==null || n==null || !zonaInfo) return null;
+    var r = utmParaLatLon(e, n, zonaInfo.zona, zonaInfo.sul);
+    if(isNaN(r.lat) || isNaN(r.lon)) return null;
+    return r;
+  }
+
   /* ---------- coordenadas do local (GPS) ----------
-     Só preenche os campos de latitude/longitude na tela — quem salva de fato
-     esses valores na nuvem é o "Salvar" de sempre (eles entram no jsonb
-     junto com o resto do formulário, via collectState() -> local.latitude
-     e local.longitude, do mesmo jeito que qualquer outro campo). */
+     Só preenche os campos de E/N/Zona na tela — quem salva de fato esses
+     valores na nuvem é o "Salvar" de sempre (eles entram no jsonb junto com
+     o resto do formulário, via collectState() -> local.utmE/utmN/utmZona,
+     do mesmo jeito que qualquer outro campo). */
   function setGeoStatus(msg, isError){
     var el = $('#geo-status');
     el.textContent = msg||'';
     el.classList.toggle('is-error', !!isError);
   }
   function updateGeoMapLink(){
-    var lat = $('#f-latitude').value.trim(), lon = $('#f-longitude').value.trim();
+    var pos = latLonAtuais();
     var link = $('#link-geo-map');
-    if(lat && lon){
-      link.href = 'https://www.google.com/maps?q='+encodeURIComponent(lat.replace(',','.'))+','+encodeURIComponent(lon.replace(',','.'));
+    if(pos){
+      link.href = 'https://www.google.com/maps?q='+pos.lat.toFixed(6)+','+pos.lon.toFixed(6);
       link.hidden = false;
     } else {
       link.hidden = true;
@@ -1279,9 +1409,10 @@
       default: return 'Não foi possível obter sua localização.';
     }
   }
-  // Preenche latitude/longitude com a posição atual do aparelho (GPS do
-  // celular, ou a localização aproximada do navegador em um computador).
-  // Os campos continuam editáveis depois — dá pra corrigir na mão se precisar.
+  // Preenche E/N/Zona (UTM) com a posição atual do aparelho (GPS do celular,
+  // ou a localização aproximada do navegador em um computador), já
+  // convertida. Os campos continuam editáveis depois — dá pra corrigir na
+  // mão se precisar, ou digitar direto uma coordenada UTM de outro aparelho.
   function usarMinhaLocalizacao(){
     if(!navigator.geolocation){
       setGeoStatus('Este navegador não permite capturar localização automaticamente. Digite as coordenadas manualmente.', true);
@@ -1292,8 +1423,7 @@
     setGeoStatus('Obtendo localização...');
     navigator.geolocation.getCurrentPosition(function(pos){
       var lat = pos.coords.latitude, lon = pos.coords.longitude, acc = pos.coords.accuracy;
-      $('#f-latitude').value = lat.toFixed(6);
-      $('#f-longitude').value = lon.toFixed(6);
+      preencherUTM(lat, lon);
       updateGeoMapLink();
       markDirty();
       setGeoStatus('Localização capturada (precisão de aproximadamente '+Math.round(acc)+' m).');
@@ -1350,10 +1480,10 @@
     });
   }
   // Dispara a busca de endereço quando a pessoa termina de editar (sai do
-  // campo) latitude ou longitude na mão, e as duas já têm um número válido.
+  // campo) E, N ou Zona na mão, e a coordenada UTM já é válida.
   function buscarEnderecoSeCoordenadasValidas(){
-    var lat = parseNum($('#f-latitude').value), lon = parseNum($('#f-longitude').value);
-    if(lat!=null && lon!=null) buscarEnderecoPorCoordenadas(lat, lon);
+    var pos = latLonAtuais();
+    if(pos) buscarEnderecoPorCoordenadas(pos.lat, pos.lon);
     else setEnderecoTexto('');
   }
 
@@ -1409,7 +1539,12 @@
         '<path d="M10 0C4.5 0 0 4.5 0 10c0 7.6 10 18 10 18s10-10.4 10-18C20 4.5 15.5 0 10 0z" fill="#D32F2F"/>'+
         '<circle cx="10" cy="10" r="4" fill="#fff"/>'+
       '</svg>';
-    var caption = endereco ? esc(endereco) : (lat.toFixed(6)+', '+lon.toFixed(6));
+    // Legenda embaixo do mapa: prioriza o endereço (mais fácil de reconhecer
+    // de relance), mas sempre com a coordenada UTM/SIRGAS2000 junto — é o
+    // formato que entra no relatório oficial de sondagem.
+    var utm = latLonParaUTM(lat, lon);
+    var utmTexto = utm.zona+(lat<0?'S':'N')+' '+Math.round(utm.easting)+'E '+Math.round(utm.northing)+'N';
+    var caption = endereco ? (esc(endereco)+' · '+esc(utmTexto)) : esc(utmTexto);
     return '<div class="ps-map">'+
         '<div class="ps-map-title">Mapa de localização</div>'+
         '<div class="ps-map-viewport">'+
@@ -1652,10 +1787,12 @@
   $('#btn-dxf').addEventListener('click', exportDxf);
 
   $('#btn-geo').addEventListener('click', usarMinhaLocalizacao);
-  $('#f-latitude').addEventListener('input', updateGeoMapLink);
-  $('#f-longitude').addEventListener('input', updateGeoMapLink);
-  $('#f-latitude').addEventListener('change', buscarEnderecoSeCoordenadasValidas);
-  $('#f-longitude').addEventListener('change', buscarEnderecoSeCoordenadasValidas);
+  $('#f-utm-e').addEventListener('input', updateGeoMapLink);
+  $('#f-utm-n').addEventListener('input', updateGeoMapLink);
+  $('#f-utm-zona').addEventListener('input', updateGeoMapLink);
+  $('#f-utm-e').addEventListener('change', buscarEnderecoSeCoordenadasValidas);
+  $('#f-utm-n').addEventListener('change', buscarEnderecoSeCoordenadasValidas);
+  $('#f-utm-zona').addEventListener('change', buscarEnderecoSeCoordenadasValidas);
   $('#btn-foto').addEventListener('click', function(){ $('#file-foto').click(); });
   $('#file-foto').addEventListener('change', selecionarFoto);
   $('#btn-foto-remover').addEventListener('click', removerFoto);
