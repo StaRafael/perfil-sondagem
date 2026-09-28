@@ -1017,6 +1017,7 @@
     window.__isExample = !!d.isExample;
     $('#example-badge').style.display = window.__isExample ? '' : 'none';
     window.__docProjetoId = d.projetoId || null;
+    sincronizarSelecaoDeProjeto();
     $('#f-status').value = d.status || 'rascunho';
     atualizarCorStatus();
     updateTopbar();
@@ -1045,13 +1046,22 @@
     var p = currentProjetos.filter(function(p){ return p.id===id; })[0];
     return p ? p.nome : '';
   }
+  // IMPORTANTE: updateTopbar() é chamada a cada tecla digitada em qualquer
+  // campo (via markDirty(), disparado pelo listener genérico de 'input').
+  // Por isso ela NÃO mexe no valor do seletor #tb-projeto — se mexesse,
+  // toda vez que o próprio #tb-projeto disparasse seu evento 'input' (antes
+  // do 'change'), essa função rodaria primeiro e sobrescreveria o valor que
+  // a pessoa acabou de escolher com o window.__docProjetoId ainda antigo,
+  // fazendo a troca de projeto "voltar sozinha". Quem sincroniza o valor do
+  // seletor é sincronizarSelecaoDeProjeto(), chamada só nos momentos em que
+  // window.__docProjetoId muda por fora do próprio seletor (renderForm,
+  // filtro da barra lateral, criar projeto novo).
   function updateTopbar(){
     $('#tb-sondagem').textContent = $('#f-sondagemNo').value || 'nova sondagem';
     $('#tb-obra').textContent = $('#f-obra').value || 'Sem nome da obra';
-    var nomeProjeto = nomeDoProjeto(window.__docProjetoId);
-    var tbProjeto = $('#tb-projeto');
-    if(nomeProjeto){ tbProjeto.textContent = nomeProjeto; tbProjeto.hidden = false; }
-    else { tbProjeto.textContent = ''; tbProjeto.hidden = true; }
+  }
+  function sincronizarSelecaoDeProjeto(){
+    $('#tb-projeto').value = window.__docProjetoId || '';
   }
 
   function markDirty(){
@@ -1146,6 +1156,19 @@
     sel.innerHTML = html;
     sel.value = atual; // se o projeto atual não existir mais na lista (foi apagado por outra pessoa), volta pra "Todos"
     if(sel.value !== atual) window.__projetoSelecionadoId = null;
+
+    // Seletor de "a qual projeto ESTA sondagem pertence", na topbar — mesma
+    // lista de projetos, mas sem "Todos os projetos" (não é um filtro) e sem
+    // "+ Novo projeto…" (isso só existe no seletor da barra lateral).
+    var selDoc = $('#tb-projeto');
+    var atualDoc = window.__docProjetoId || '';
+    var htmlDoc = '<option value="">Sem projeto</option>';
+    currentProjetos.forEach(function(p){
+      htmlDoc += '<option value="'+esc(p.id)+'">'+esc(p.nome)+'</option>';
+    });
+    selDoc.innerHTML = htmlDoc;
+    selDoc.value = atualDoc;
+
     atualizarEstatisticas(); // conta de projetos pode ter mudado; chama aqui também pois loadProjetos() e loadCloudSondagens() rodam em paralelo no boot
   }
   // Pede o nome e cadastra um projeto novo na nuvem, já deixando ele
@@ -1175,7 +1198,7 @@
       // dela pela primeira vez).
       if(!currentDocId){
         window.__docProjetoId = window.__projetoSelecionadoId;
-        updateTopbar();
+        sincronizarSelecaoDeProjeto();
       }
       renderProjetoOptions();
       renderSessionList();
@@ -2035,11 +2058,17 @@
     // — só trocar o filtro nunca reatribui um registro existente sem querer.
     if(!currentDocId){
       window.__docProjetoId = window.__projetoSelecionadoId;
-      updateTopbar();
+      sincronizarSelecaoDeProjeto();
     }
     renderSessionList();
   });
   $('#f-status').addEventListener('change', atualizarCorStatus);
+  // Troca o projeto da sondagem aberta na tela agora mesmo (nova ou já
+  // salva) — precisa clicar em "Salvar" depois, igual qualquer outro campo
+  // do formulário, pra valer de verdade.
+  $('#tb-projeto').addEventListener('change', function(){
+    window.__docProjetoId = $('#tb-projeto').value || null;
+  });
   $('#btn-mapa-projeto').addEventListener('click', abrirMapaProjeto);
   $('#btn-relatorio-projeto').addEventListener('click', exportarResumoProjetoCsv);
   $('#btn-imprimir-projeto').addEventListener('click', imprimirTodasDoProjeto);

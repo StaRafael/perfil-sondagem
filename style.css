@@ -201,7 +201,11 @@
     padding:3px 8px;border-radius:4px;letter-spacing:.02em;
   }
   .topbar-id .obra{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .topbar-id .tag-projeto{background:var(--surface-alt);color:var(--ink-soft);border:1px solid var(--line-strong);}
+  /* Agora é um <select> (dá pra trocar o projeto da sondagem aberta direto
+     por aqui, sem precisar ir em "Todos os projetos" procurar nada) — herda
+     o visual do .tag normal, só ajustando o cursor pra deixar claro que é
+     clicável. */
+  .topbar-id .tag-projeto{background:var(--surface-alt);color:var(--ink-soft);border:1px solid var(--line-strong);cursor:pointer;}
 
   /* Seletor de status da sondagem (rascunho/concluída/revisada) — a cor de
      fundo muda com a opção escolhida (ver classes st-* aplicadas via JS em
