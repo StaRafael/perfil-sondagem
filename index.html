@@ -63,6 +63,12 @@
       </div>
       <button type="button" class="rail-user-logout" id="btn-logout" title="Sair">Sair</button>
     </div>
+    <div class="rail-projeto">
+      <label class="rail-projeto-label" for="sel-projeto">Projeto</label>
+      <select id="sel-projeto" class="rail-projeto-select">
+        <option value="">Todos os projetos</option>
+      </select>
+    </div>
     <button class="btn-new" id="btn-new" type="button">+ Nova sondagem</button>
     <div class="rail-list" id="rail-list">
       <div class="rail-empty">Nenhuma sondagem salva ainda.</div>
@@ -75,6 +81,7 @@
       <div class="topbar-id">
         <span class="tag" id="tb-sondagem">S-01</span>
         <span class="obra" id="tb-obra">Nome da obra</span>
+        <span class="tag tag-projeto" id="tb-projeto" hidden></span>
       </div>
       <div class="topbar-actions">
         <button class="btn btn-ghost" id="btn-print-sheet" type="button">Folha do perfil</button>

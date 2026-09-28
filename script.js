@@ -28,6 +28,13 @@
   var currentDocId = null;
   var sessionDocs = []; // {id, data} das sondagens da empresa logada, carregadas da nuvem ao entrar
 
+  // Projetos: agrupam várias sondagens (ex.: "Teste 1" com 10 perfis dentro).
+  // currentProjetos é a lista de projetos já cadastrados pela empresa, e o
+  // valor escolhido no seletor da barra lateral (window.__projetoSelecionadoId)
+  // funciona como um filtro da lista + "projeto padrão" pra toda sondagem
+  // nova criada enquanto ele estiver selecionado (ver blankData()/renderForm()).
+  var currentProjetos = []; // [{id, nome}], da empresa logada
+
   // Pra qual usuário a tela já foi carregada (perfil + empresa + lista de
   // sondagens). Existe só pra evitar recarregar tudo — e apagar o que a
   // pessoa está digitando — toda vez que o Supabase dispara o listener de
@@ -903,6 +910,10 @@
   /* ---------- leitura / escrita do formulário ---------- */
   function collectState(){
     return {
+      // A qual projeto esta sondagem pertence (null = nenhum projeto). Não
+      // tem campo próprio na tela — vem do seletor de projeto da barra
+      // lateral, guardado em window.__docProjetoId (ver renderForm/blankData).
+      projetoId: window.__docProjetoId || null,
       meta:{
         obra: $('#f-obra').value, nOS: $('#f-nOS').value, tecnico: $('#f-tecnico').value,
         equipeSondagem: $('#f-equipeSondagem').value, tempo: $('#f-tempo').value,
@@ -984,13 +995,23 @@
 
     window.__isExample = !!d.isExample;
     $('#example-badge').style.display = window.__isExample ? '' : 'none';
+    window.__docProjetoId = d.projetoId || null;
     updateTopbar();
     redrawLith();
   }
 
+  function nomeDoProjeto(id){
+    if(!id) return '';
+    var p = currentProjetos.filter(function(p){ return p.id===id; })[0];
+    return p ? p.nome : '';
+  }
   function updateTopbar(){
     $('#tb-sondagem').textContent = $('#f-sondagemNo').value || 'nova sondagem';
     $('#tb-obra').textContent = $('#f-obra').value || 'Sem nome da obra';
+    var nomeProjeto = nomeDoProjeto(window.__docProjetoId);
+    var tbProjeto = $('#tb-projeto');
+    if(nomeProjeto){ tbProjeto.textContent = nomeProjeto; tbProjeto.hidden = false; }
+    else { tbProjeto.textContent = ''; tbProjeto.hidden = true; }
   }
 
   function markDirty(){
@@ -1002,7 +1023,11 @@
   }
 
   function blankData(){
-    return { meta:{}, equip:{}, litologia:[{}], voc:[], perfil:{}, carimbo:{}, isExample:false };
+    // Nasce já marcada com o projeto selecionado no momento na barra lateral
+    // (se houver) — é assim que "cadastra o projeto uma vez, depois só clica
+    // em Nova sondagem várias vezes" funciona sem ter que escolher de novo
+    // toda hora.
+    return { meta:{}, equip:{}, litologia:[{}], voc:[], perfil:{}, carimbo:{}, isExample:false, projetoId: window.__projetoSelecionadoId || null };
   }
   function exampleData(){
     return {
@@ -1056,17 +1081,81 @@
     var m=data.meta||{};
     return { title: (m.sondagemNo||'Sondagem') + (m.pocoNo?(' · '+m.pocoNo):''), sub: m.obra || 'Sem nome da obra' };
   }
+
+  /* ---------- projetos ----------
+     Um projeto é só um nome que agrupa várias sondagens (ex.: cadastra
+     "Teste 1", faz 10 perfis dentro dele). Fica guardado na nuvem, na tabela
+     "projetos" (ver schema.sql), do mesmo jeito multi-empresa das sondagens. */
+  function loadProjetos(){
+    if(!currentOrg) return Promise.resolve();
+    return sb.from('projetos').select('id, nome').eq('organization_id', currentOrg.id)
+      .order('nome').then(function(res){
+        if(res.error){ console.error(res.error); return; }
+        currentProjetos = res.data || [];
+        renderProjetoOptions();
+      });
+  }
+  function renderProjetoOptions(){
+    var sel = $('#sel-projeto');
+    var atual = window.__projetoSelecionadoId || '';
+    var html = '<option value="">Todos os projetos</option>';
+    currentProjetos.forEach(function(p){
+      html += '<option value="'+esc(p.id)+'">'+esc(p.nome)+'</option>';
+    });
+    html += '<option value="__novo__">+ Novo projeto…</option>';
+    sel.innerHTML = html;
+    sel.value = atual; // se o projeto atual não existir mais na lista (foi apagado por outra pessoa), volta pra "Todos"
+    if(sel.value !== atual) window.__projetoSelecionadoId = null;
+  }
+  // Pede o nome e cadastra um projeto novo na nuvem, já deixando ele
+  // selecionado (então a próxima sondagem nova já nasce marcada com ele).
+  function criarNovoProjeto(){
+    var nome = window.prompt('Nome do novo projeto:');
+    if(nome==null || !nome.trim()){ renderProjetoOptions(); return; } // cancelou ou deixou em branco — só volta o seletor pro que estava antes
+    nome = nome.trim();
+    if(!currentOrg){ renderProjetoOptions(); return; }
+    sb.from('projetos').insert({
+      organization_id: currentOrg.id,
+      created_by: currentProfile ? currentProfile.id : null,
+      nome: nome
+    }).select().single().then(function(res){
+      if(res.error || !res.data){
+        console.error(res.error);
+        toast('Não foi possível criar o projeto agora. Tente novamente.');
+        renderProjetoOptions();
+        return;
+      }
+      currentProjetos.push({ id: res.data.id, nome: res.data.nome });
+      currentProjetos.sort(function(a,b){ return a.nome.localeCompare(b.nome,'pt-BR'); });
+      window.__projetoSelecionadoId = res.data.id;
+      renderProjetoOptions();
+      renderSessionList();
+      toast('Projeto "'+res.data.nome+'" criado.');
+    });
+  }
   function setActiveRailItem(id){
     $all('.rail-item').forEach(function(el){ el.classList.toggle('is-active', el.dataset.id===id); });
   }
+  // Filtra a lista pelo projeto escolhido no seletor da barra lateral (ou
+  // mostra todas, quando "Todos os projetos" está selecionado). Sondagens
+  // salvas antes desse recurso existir, sem projeto nenhum, continuam
+  // aparecendo normalmente em "Todos os projetos" — nada muda pra elas.
+  function docsFiltradosPorProjeto(){
+    var filtro = window.__projetoSelecionadoId || null;
+    if(!filtro) return sessionDocs;
+    return sessionDocs.filter(function(d){ return (d.data.projetoId||null) === filtro; });
+  }
   function renderSessionList(){
     var list = $('#rail-list');
-    if(!sessionDocs.length){
-      list.innerHTML = '<div class="rail-empty">Nenhuma sondagem salva ainda. Preencha a ficha e clique em "Salvar".</div>';
+    var docs = docsFiltradosPorProjeto();
+    if(!docs.length){
+      list.innerHTML = window.__projetoSelecionadoId
+        ? '<div class="rail-empty">Nenhuma sondagem salva neste projeto ainda.</div>'
+        : '<div class="rail-empty">Nenhuma sondagem salva ainda. Preencha a ficha e clique em "Salvar".</div>';
       return;
     }
     list.innerHTML='';
-    sessionDocs.slice().reverse().forEach(function(doc){
+    docs.slice().reverse().forEach(function(doc){
       var lbl = railItemLabel(doc.data);
       var item = document.createElement('div');
       item.className='rail-item'; item.dataset.id=doc.id;
@@ -1151,6 +1240,7 @@
       sondagem_no: m.sondagemNo || null,
       poco_no: m.pocoNo || null,
       obra: m.obra || null,
+      projeto_id: data.projetoId || null,
       data: data
     }).then(function(res){
       if(res.error){
@@ -1543,6 +1633,12 @@
   $('#btn-add-lit').addEventListener('click', function(){ addLitRow(); redrawLith(); markDirty(); });
   $('#btn-add-voc').addEventListener('click', function(){ addVocRow(); markDirty(); });
   $('#btn-new').addEventListener('click', newSondagem);
+  $('#sel-projeto').addEventListener('change', function(){
+    var v = $('#sel-projeto').value;
+    if(v === '__novo__'){ criarNovoProjeto(); return; }
+    window.__projetoSelecionadoId = v || null;
+    renderSessionList();
+  });
   $('#btn-save').addEventListener('click', saveToSession);
   $('#btn-export-all').addEventListener('click', exportAllSondagens);
   $('#btn-import').addEventListener('click', function(){ $('#file-import').click(); });
@@ -1672,7 +1768,8 @@
         $('#rail-user-org').textContent = (currentOrg && currentOrg.name) || 'Empresa';
         $('#rail-user-email').textContent = currentUser.email || '';
         showScreen('app');
-        return loadCloudSondagens();
+        window.__projetoSelecionadoId = null;
+        return Promise.all([loadProjetos(), loadCloudSondagens()]);
       });
     }).catch(function(err){
       console.error(err);
@@ -1685,10 +1782,17 @@
   // já está salvo na nuvem"; se a empresa ainda não salvou nada, abre um
   // formulário em branco em vez do exemplo.
   function loadCloudSondagens(){
-    return sb.from('sondagens').select('id, data, updated_at').eq('organization_id', currentOrg.id)
+    return sb.from('sondagens').select('id, data, projeto_id, updated_at').eq('organization_id', currentOrg.id)
       .order('updated_at', { ascending: false }).then(function(res){
         if(res.error){ console.error(res.error); toast('Erro ao carregar as sondagens salvas.'); return; }
-        sessionDocs = (res.data||[]).map(function(r){ return { id: r.id, data: r.data }; });
+        sessionDocs = (res.data||[]).map(function(r){
+          // a coluna "projeto_id" é quem manda (ela existe fora do jsonb
+          // justamente pra dar pra filtrar/reatribuir sem reabrir cada
+          // sondagem) — mantém o jsonb "data" em sincronia com ela.
+          var data = r.data || {};
+          data.projetoId = r.projeto_id || null;
+          return { id: r.id, data: data };
+        });
         window.__isExample = false;
         $('#example-badge').style.display = 'none';
         renderSessionList();

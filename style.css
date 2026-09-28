@@ -110,6 +110,19 @@
   .rail-mark{flex:none;}
   .rail-title{font-size:17px;font-weight:600;letter-spacing:-.01em;}
   .rail-sub{font-size:11.5px;color:var(--ink-soft);letter-spacing:.03em;text-transform:uppercase;}
+  /* seletor de projeto — filtra a lista de sondagens abaixo por projeto, e
+     toda sondagem nova criada enquanto um projeto estiver selecionado já
+     nasce marcada com ele (não precisa escolher de novo a cada sondagem). */
+  .rail-projeto{margin-bottom:12px;}
+  .rail-projeto-label{
+    display:block;font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+    color:var(--ink-soft);margin-bottom:5px;
+  }
+  .rail-projeto-select{
+    width:100%;padding:8px 10px;border-radius:var(--radius-s);
+    border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);
+    font-size:13px;font-weight:600;
+  }
   .btn-new{
     display:flex;align-items:center;justify-content:center;gap:7px;
     width:100%;padding:10px 12px;border-radius:var(--radius-m);
@@ -162,6 +175,7 @@
     padding:3px 8px;border-radius:4px;letter-spacing:.02em;
   }
   .topbar-id .obra{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .topbar-id .tag-projeto{background:var(--surface-alt);color:var(--ink-soft);border:1px solid var(--line-strong);}
   .topbar-actions{display:flex;gap:8px;flex:none;}
   .btn{
     display:inline-flex;align-items:center;gap:6px;
@@ -372,6 +386,7 @@
       overflow-x:auto;padding:14px 14px;gap:14px;
     }
     .rail-brand{border-bottom:none;padding-bottom:0;margin-bottom:0;border-right:1px solid var(--line);padding-right:14px;}
+    .rail-projeto{margin-bottom:0;flex:none;width:170px;}
     .btn-new{width:auto;white-space:nowrap;}
     .rail-list{flex-direction:row;margin-top:0;overflow-x:auto;overflow-y:visible;}
     .rail-item{width:auto;min-width:150px;}
