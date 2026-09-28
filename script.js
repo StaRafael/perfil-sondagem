@@ -914,6 +914,10 @@
       // tem campo próprio na tela — vem do seletor de projeto da barra
       // lateral, guardado em window.__docProjetoId (ver renderForm/blankData).
       projetoId: window.__docProjetoId || null,
+      // Status de andamento da sondagem (rascunho/concluída/revisada) — só
+      // controle interno de fluxo de trabalho, não entra na folha impressa.
+      // Ver statusInfo()/atualizarCorStatus() pra cor e texto de cada valor.
+      status: $('#f-status').value || 'rascunho',
       meta:{
         obra: $('#f-obra').value, nOS: $('#f-nOS').value, tecnico: $('#f-tecnico').value,
         equipeSondagem: $('#f-equipeSondagem').value, tempo: $('#f-tempo').value,
@@ -1013,8 +1017,27 @@
     window.__isExample = !!d.isExample;
     $('#example-badge').style.display = window.__isExample ? '' : 'none';
     window.__docProjetoId = d.projetoId || null;
+    $('#f-status').value = d.status || 'rascunho';
+    atualizarCorStatus();
     updateTopbar();
     redrawLith();
+  }
+
+  // Texto e cor de cada valor possível do status — usado no seletor da
+  // topbar, na bolinha da lista lateral e no relatório consolidado (.csv).
+  function statusInfo(v){
+    var mapa = {
+      rascunho:  { texto:'Rascunho',  cor:'#9AA5B1' },
+      concluida: { texto:'Concluída', cor:'#2F6FE4' },
+      revisada:  { texto:'Revisada',  cor:'#1E9E6B' }
+    };
+    return mapa[v] || mapa.rascunho;
+  }
+  // Troca a cor de fundo do seletor de status pra combinar com o valor
+  // escolhido (ver classes .st-* no style.css).
+  function atualizarCorStatus(){
+    var v = $('#f-status').value || 'rascunho';
+    $('#status-select-wrap').className = 'status-select-wrap st-'+v;
   }
 
   function nomeDoProjeto(id){
@@ -1044,7 +1067,7 @@
     // (se houver) — é assim que "cadastra o projeto uma vez, depois só clica
     // em Nova sondagem várias vezes" funciona sem ter que escolher de novo
     // toda hora.
-    return { meta:{}, equip:{}, litologia:[{}], voc:[], perfil:{}, carimbo:{}, isExample:false, projetoId: window.__projetoSelecionadoId || null };
+    return { meta:{}, equip:{}, litologia:[{}], voc:[], perfil:{}, carimbo:{}, isExample:false, status:'rascunho', projetoId: window.__projetoSelecionadoId || null };
   }
   function exampleData(){
     return {
@@ -1123,6 +1146,7 @@
     sel.innerHTML = html;
     sel.value = atual; // se o projeto atual não existir mais na lista (foi apagado por outra pessoa), volta pra "Todos"
     if(sel.value !== atual) window.__projetoSelecionadoId = null;
+    atualizarEstatisticas(); // conta de projetos pode ter mudado; chama aqui também pois loadProjetos() e loadCloudSondagens() rodam em paralelo no boot
   }
   // Pede o nome e cadastra um projeto novo na nuvem, já deixando ele
   // selecionado (então a próxima sondagem nova já nasce marcada com ele).
@@ -1169,17 +1193,20 @@
       list.innerHTML = window.__projetoSelecionadoId
         ? '<div class="rail-empty">Nenhuma sondagem salva neste projeto ainda.</div>'
         : '<div class="rail-empty">Nenhuma sondagem salva ainda. Preencha a ficha e clique em "Salvar".</div>';
+      atualizarEstatisticas();
+      atualizarResumoProjeto();
       return;
     }
     list.innerHTML='';
     docs.slice().reverse().forEach(function(doc){
       var lbl = railItemLabel(doc.data);
+      var st = statusInfo(doc.data.status);
       var item = document.createElement('div');
       item.className='rail-item'; item.dataset.id=doc.id;
       if(doc.id===currentDocId) item.classList.add('is-active');
       item.innerHTML =
         '<button type="button" class="rail-item-main" style="all:unset;cursor:pointer;display:block;min-width:0;">'+
-          '<div class="rail-item-title">'+esc(lbl.title)+'</div>'+
+          '<div class="rail-item-title"><span class="rail-item-status-dot" style="background:'+st.cor+'" title="'+esc(st.texto)+'"></span>'+esc(lbl.title)+'</div>'+
           '<div class="rail-item-sub">'+esc(lbl.sub)+'</div>'+
         '</button>'+
         '<button type="button" class="rail-item-dl" title="Exportar só esta (.json)">⬇</button>'+
@@ -1205,6 +1232,54 @@
       });
       list.appendChild(item);
     });
+    atualizarEstatisticas();
+    atualizarResumoProjeto();
+  }
+
+  // ---- Estatísticas gerais (barra no topo da lista lateral) ----
+  // Total de projetos cadastrados, total de sondagens salvas, e quantas
+  // foram iniciadas no mês corrente — dá uma visão geral da operação assim
+  // que o sistema abre, sem precisar entrar em nenhum projeto específico.
+  function atualizarEstatisticas(){
+    var elP = $('#stat-projetos'), elS = $('#stat-sondagens'), elM = $('#stat-mes');
+    if(!elP) return;
+    elP.textContent = currentProjetos.length;
+    elS.textContent = sessionDocs.length;
+    var agora = new Date();
+    var anoMes = agora.getFullYear()+'-'+String(agora.getMonth()+1).padStart(2,'0');
+    var esteMes = sessionDocs.filter(function(d){
+      var di = (d.data.meta||{}).dataInicio || '';
+      return di.slice(0,7) === anoMes;
+    }).length;
+    elM.textContent = esteMes;
+  }
+
+  // ---- Painel resumo do projeto selecionado ----
+  // Só aparece quando um projeto específico está escolhido no seletor da
+  // barra lateral (em "Todos os projetos" fica escondido, já que a ideia é
+  // dar visão geral de UM projeto por vez).
+  function atualizarResumoProjeto(){
+    var painel = $('#projeto-resumo');
+    if(!painel) return;
+    var filtro = window.__projetoSelecionadoId || null;
+    if(!filtro){ painel.hidden = true; return; }
+    painel.hidden = false;
+    var docs = docsFiltradosPorProjeto();
+    $('#pr-qtd').textContent = docs.length;
+
+    var profs = docs.map(function(d){ return parseNum((d.data.perfil||{}).profTotalSondagem); })
+      .filter(function(n){ return n!=null; });
+    $('#pr-prof').textContent = profs.length
+      ? fmtDepth(profs.reduce(function(a,b){ return a+b; },0)/profs.length, 2)+' m'
+      : '—';
+
+    var datas = docs.map(function(d){ return (d.data.meta||{}).dataInicio; }).filter(Boolean).sort();
+    $('#pr-periodo').textContent = datas.length
+      ? (fmtDateBR(datas[0]) + (datas.length>1 && datas[0]!==datas[datas.length-1] ? ' – '+fmtDateBR(datas[datas.length-1]) : ''))
+      : '—';
+
+    var incompletas = docs.filter(function(d){ return (d.data.status||'rascunho')==='rascunho'; }).length;
+    $('#pr-incompletas').textContent = incompletas;
   }
 
   // Uma sondagem é identificada pelo seu número (+ poço, quando houver). Usado para que
@@ -1555,6 +1630,176 @@
       '</div>';
   }
 
+  // A partir dos dados salvos de UMA sondagem, devolve {lat, lon} — prioriza
+  // a UTM digitada na tela (convertendo de volta), e cai pro par lat/long
+  // antigo quando a sondagem foi salva antes desse campo existir. Devolve
+  // null quando a sondagem não tem nenhuma coordenada registrada ainda.
+  function latLonDoDoc(data){
+    var local = (data||{}).local || {};
+    if(local.utmE && local.utmN && local.utmZona){
+      var zonaInfo = interpretaZonaUtm(local.utmZona);
+      var e = parseNum(local.utmE), n = parseNum(local.utmN);
+      if(zonaInfo && e!=null && n!=null){
+        var r = utmParaLatLon(e, n, zonaInfo.zona, zonaInfo.sul);
+        if(!isNaN(r.lat) && !isNaN(r.lon)) return r;
+      }
+    }
+    var lat = parseNum(local.latitude), lon = parseNum(local.longitude);
+    if(lat!=null && lon!=null) return { lat:lat, lon:lon };
+    return null;
+  }
+
+  /* ---------- mapa com todos os pontos de um projeto ----------
+     Mesma técnica de blocos reais do mini-mapa acima (Esri World Imagery,
+     com CARTO como plano B), mas aqui o enquadramento é calculado pra caber
+     TODOS os pontos do projeto de uma vez, não só um — acha o zoom mais alto
+     em que a distância entre o ponto mais a leste/oeste/norte/sul ainda cabe
+     na janela, com uma margem, ao invés do zoom fixo (18) do mini-mapa. */
+  function buildMapaProjetoHtml(pontos){
+    var VW = 560, VH = 380, TILE = 256, PAD = 46;
+    var Z = 18;
+    for(var z=18; z>=2; z--){
+      var xs=[], ys=[];
+      pontos.forEach(function(p){
+        var f = lonLatParaTileFrac(p.lat, p.lon, z);
+        xs.push(f.x*TILE); ys.push(f.y*TILE);
+      });
+      var w = Math.max.apply(null, xs) - Math.min.apply(null, xs);
+      var h = Math.max.apply(null, ys) - Math.min.apply(null, ys);
+      Z = z;
+      if(w <= (VW-PAD*2) && h <= (VH-PAD*2)) break;
+    }
+    var n = Math.pow(2, Z);
+    var pxs = pontos.map(function(p){ var f = lonLatParaTileFrac(p.lat, p.lon, Z); return { x:f.x*TILE, y:f.y*TILE }; });
+    var minX = Math.min.apply(null, pxs.map(function(p){ return p.x; }));
+    var maxX = Math.max.apply(null, pxs.map(function(p){ return p.x; }));
+    var minY = Math.min.apply(null, pxs.map(function(p){ return p.y; }));
+    var maxY = Math.max.apply(null, pxs.map(function(p){ return p.y; }));
+    var originX = (minX+maxX)/2 - VW/2;
+    var originY = (minY+maxY)/2 - VH/2;
+
+    var startTx = Math.floor(originX/TILE), endTx = Math.floor((originX+VW)/TILE);
+    var startTy = Math.floor(originY/TILE), endTy = Math.floor((originY+VH)/TILE);
+    var tilesHtml = '';
+    for(var ty=startTy; ty<=endTy; ty++){
+      if(ty<0 || ty>=n) continue;
+      for(var tx=startTx; tx<=endTx; tx++){
+        var txWrap = ((tx % n) + n) % n;
+        var left = tx*TILE - originX, top = ty*TILE - originY;
+        var url = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/'+Z+'/'+ty+'/'+txWrap;
+        var fallbackUrl = 'https://basemaps.cartocdn.com/light_all/'+Z+'/'+txWrap+'/'+ty+'.png';
+        tilesHtml += '<img src="'+url+'" data-fallback="'+fallbackUrl+'" alt="" '+
+          'style="left:'+left+'px;top:'+top+'px;width:'+TILE+'px;height:'+TILE+'px;">';
+      }
+    }
+    var markersHtml = pontos.map(function(p, idx){
+      var f = lonLatParaTileFrac(p.lat, p.lon, Z);
+      var px = f.x*TILE - originX, py = f.y*TILE - originY;
+      return '<div class="mp-marker" style="left:'+px+'px;top:'+py+'px;" title="'+esc(p.numero)+'">'+
+        '<svg width="22" height="30" viewBox="0 0 20 28">'+
+          '<path d="M10 0C4.5 0 0 4.5 0 10c0 7.6 10 18 10 18s10-10.4 10-18C20 4.5 15.5 0 10 0z" fill="#D32F2F"/>'+
+          '<circle cx="10" cy="10" r="7" fill="#fff"/>'+
+          '<text x="10" y="13" font-size="9" font-weight="700" text-anchor="middle" fill="#D32F2F" font-family="sans-serif">'+(idx+1)+'</text>'+
+        '</svg>'+
+      '</div>';
+    }).join('');
+    var legenda = pontos.map(function(p, idx){
+      return '<div class="mp-legenda-item"><span class="mp-legenda-num">'+(idx+1)+'</span>'+esc(p.numero)+'</div>';
+    }).join('');
+    return '<div class="mp-viewport" style="width:'+VW+'px;height:'+VH+'px;">'+tilesHtml+markersHtml+'</div>'+
+      '<div class="mp-legenda">'+legenda+'</div>';
+  }
+  // Abre o pop-up com o mapa de todos os pontos do projeto selecionado no
+  // seletor da barra lateral (cada sondagem que já tem coordenadas salvas
+  // vira um pino numerado; as que ainda não têm ficam de fora do mapa, mas
+  // continuam contadas normalmente no resto do sistema).
+  function abrirMapaProjeto(){
+    var filtro = window.__projetoSelecionadoId;
+    if(!filtro) return;
+    var docs = docsFiltradosPorProjeto();
+    var pontos = [];
+    docs.forEach(function(d){
+      var pos = latLonDoDoc(d.data);
+      if(pos) pontos.push({ lat:pos.lat, lon:pos.lon, numero: railItemLabel(d.data).title });
+    });
+    $('#mapa-projeto-titulo').textContent = 'Mapa do projeto — '+(nomeDoProjeto(filtro)||'—');
+    $('#mapa-projeto-corpo').innerHTML = pontos.length
+      ? buildMapaProjetoHtml(pontos)
+      : '<p class="mapa-projeto-vazio">Nenhuma sondagem deste projeto tem coordenadas registradas ainda. Preencha as "Coordenadas do local" (UTM) de pelo menos uma sondagem do projeto para o mapa aparecer aqui.</p>';
+    $('#mapa-projeto-modal').hidden = false;
+  }
+  function fecharMapaProjeto(){ $('#mapa-projeto-modal').hidden = true; }
+
+  /* ---------- relatório consolidado do projeto (.csv) ----------
+     Uma linha por sondagem do projeto selecionado, com os dados que mais
+     interessam num relatório resumido (obra, status, profundidade,
+     coordenadas, endereço) — pra abrir direto no Excel/Google Sheets e
+     mandar pro cliente, sem precisar abrir cada ficha uma por uma. */
+  function exportarResumoProjetoCsv(){
+    var filtro = window.__projetoSelecionadoId;
+    if(!filtro){ toast('Selecione um projeto para exportar o relatório.'); return; }
+    var docs = docsFiltradosPorProjeto();
+    if(!docs.length){ toast('Nenhuma sondagem salva neste projeto ainda.'); return; }
+    var nomeProjeto = nomeDoProjeto(filtro) || 'projeto';
+    var linhas = [['Sondagem','Poço','Obra','Status','Data início','Data término','Profundidade total (m)','Coordenada E','Coordenada N','Zona UTM','Endereço']];
+    docs.forEach(function(d){
+      var m = d.data.meta||{}, perfil = d.data.perfil||{}, local = d.data.local||{};
+      linhas.push([
+        m.sondagemNo||'', m.pocoNo||'', m.obra||'', statusInfo(d.data.status).texto,
+        fmtDateBR(m.dataInicio)||'', fmtDateBR(m.dataTermino)||'',
+        perfil.profTotalSondagem||'', local.utmE||'', local.utmN||'', local.utmZona||'', local.endereco||''
+      ]);
+    });
+    var csv = linhas.map(function(row){
+      return row.map(function(cell){
+        var s = String(cell==null?'':cell);
+        return /[;"\n]/.test(s) ? ('"'+s.replace(/"/g,'""')+'"') : s;
+      }).join(';');
+    }).join('\r\n');
+    // ';' como separador e um BOM no início — é o que o Excel em português
+    // espera pra abrir um .csv com acento certo sem precisar importar manual.
+    var blob = new Blob(['﻿'+csv], { type:'text/csv;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var filename = 'relatorio-'+slugify(nomeProjeto)+'-'+new Date().toISOString().slice(0,10)+'.csv';
+    var a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+    toast('Relatório exportado: '+filename);
+  }
+
+  /* ---------- impressão em lote (todas as sondagens do projeto) ----------
+     Reaproveita exatamente o mesmo buildPrintSheetHtml() de "Folha do
+     perfil" (uma sondagem por vez) — só que aqui carregamos cada sondagem
+     do projeto no formulário por um instante (renderForm), pegamos a folha
+     montada, e devolvemos o formulário pro que estava na tela antes de
+     começar. As folhas entram uma atrás da outra no #print-sheet, cada uma
+     numa página própria (.ps-page, ver style.css), e só então manda
+     imprimir — depois de esperar todos os mapinhas carregarem, igual a
+     impressão de uma folha só já fazia. */
+  function imprimirTodasDoProjeto(){
+    var filtro = window.__projetoSelecionadoId;
+    if(!filtro){ toast('Selecione um projeto para imprimir o relatório consolidado.'); return; }
+    var docs = docsFiltradosPorProjeto();
+    if(!docs.length){ toast('Nenhuma sondagem salva neste projeto ainda.'); return; }
+
+    var estadoAtual = collectState(); // pra devolver a tela como estava, depois de montar as folhas
+
+    var paginas = docs.map(function(doc){
+      renderForm(doc.data);
+      return '<div class="ps-page">'+buildPrintSheetHtml()+'</div>';
+    });
+
+    renderForm(estadoAtual);
+
+    $('#print-sheet').innerHTML = paginas.join('');
+    document.body.classList.add('print-sheet-mode');
+    toast('Preparando '+docs.length+' folha(s) para impressão...');
+    aguardarImagensDoMapa(function(){
+      requestAnimationFrame(function(){ window.print(); });
+    });
+  }
+
   /* ---------- foto do local (Supabase Storage) ----------
      Guarda só UMA foto por sondagem. O arquivo vai para o bucket privado
      PHOTO_BUCKET, dentro de uma pasta "<empresa>/<sondagem>/", e o que fica
@@ -1774,6 +2019,14 @@
     window.__projetoSelecionadoId = v || null;
     renderSessionList();
   });
+  $('#f-status').addEventListener('change', atualizarCorStatus);
+  $('#btn-mapa-projeto').addEventListener('click', abrirMapaProjeto);
+  $('#btn-relatorio-projeto').addEventListener('click', exportarResumoProjetoCsv);
+  $('#btn-imprimir-projeto').addEventListener('click', imprimirTodasDoProjeto);
+  $('#mapa-projeto-fechar').addEventListener('click', fecharMapaProjeto);
+  $('#mapa-projeto-modal').addEventListener('click', function(e){
+    if(e.target.id === 'mapa-projeto-modal') fecharMapaProjeto(); // só fecha clicando no fundo
+  });
   $('#btn-save').addEventListener('click', saveToSession);
   $('#btn-export-all').addEventListener('click', exportAllSondagens);
   $('#btn-import').addEventListener('click', function(){ $('#file-import').click(); });
@@ -1813,6 +2066,7 @@
   });
   document.addEventListener('keydown', function(e){
     if(e.key === 'Escape' && !$('#foto-lightbox').hidden) fecharFotoLightbox();
+    if(e.key === 'Escape' && !$('#mapa-projeto-modal').hidden) fecharMapaProjeto();
   });
 
   /* ---------- autenticação (login / cadastro / logout) ----------

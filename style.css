@@ -123,6 +123,31 @@
     border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);
     font-size:13px;font-weight:600;
   }
+
+  /* Barra de estatísticas gerais — dá uma visão rápida do tamanho da operação
+     assim que o sistema abre, sem precisar entrar em nenhuma sondagem. */
+  .rail-stats{
+    display:flex;gap:6px;margin-bottom:14px;
+  }
+  .rail-stat{
+    flex:1;min-width:0;text-align:center;padding:8px 4px;border-radius:var(--radius-s);
+    background:var(--surface);border:1px solid var(--line);
+  }
+  .rail-stat-num{display:block;font-size:17px;font-weight:700;color:var(--accent-ink);letter-spacing:-.01em;}
+  .rail-stat-label{display:block;font-size:9.5px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.04em;margin-top:1px;}
+
+  /* Painel resumo do projeto selecionado — só aparece quando um projeto
+     específico está escolhido no seletor acima (não em "Todos os projetos"). */
+  .projeto-resumo{
+    margin-bottom:12px;padding:10px 12px;border-radius:var(--radius-m);
+    background:var(--surface);border:1px solid var(--line);
+  }
+  .pr-row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;padding:3px 0;}
+  .pr-label{color:var(--ink-soft);}
+  .pr-value{font-weight:700;color:var(--ink);}
+  .pr-actions{display:flex;flex-direction:column;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line);}
+  .btn-sm{padding:6px 10px;font-size:12px;width:100%;justify-content:center;}
+
   .btn-new{
     display:flex;align-items:center;justify-content:center;gap:7px;
     width:100%;padding:10px 12px;border-radius:var(--radius-m);
@@ -146,7 +171,8 @@
   .rail-item:hover{background:var(--surface);}
   .rail-item.is-active{background:var(--surface);border-color:var(--line-strong);box-shadow:var(--shadow);}
   .rail-item-main{flex:1;min-width:0;}
-  .rail-item-title{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .rail-item-title{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:5px;}
+  .rail-item-status-dot{flex:none;width:7px;height:7px;border-radius:50%;}
   .rail-item-sub{font-size:11.5px;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;}
   .rail-item-del,.rail-item-dl{
     flex:none;opacity:0;width:20px;height:20px;border-radius:4px;border:none;background:transparent;
@@ -176,6 +202,24 @@
   }
   .topbar-id .obra{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .topbar-id .tag-projeto{background:var(--surface-alt);color:var(--ink-soft);border:1px solid var(--line-strong);}
+
+  /* Seletor de status da sondagem (rascunho/concluída/revisada) — a cor de
+     fundo muda com a opção escolhida (ver classes st-* aplicadas via JS em
+     atualizarCorStatus()), pra dar visibilidade rápida do andamento sem
+     precisar abrir cada sondagem. */
+  .status-select-wrap{
+    display:inline-flex;border-radius:4px;padding:1px;
+    background:var(--surface-alt);border:1px solid var(--line-strong);
+  }
+  .status-select-wrap.st-rascunho{background:var(--surface-alt);border-color:var(--line-strong);}
+  .status-select-wrap.st-concluida{background:#DCE8FB;border-color:#7FA8E8;}
+  .status-select-wrap.st-revisada{background:var(--accent-tint);border-color:var(--accent);}
+  .status-select{
+    border:none;background:transparent;font-size:11.5px;font-weight:700;
+    padding:3px 6px;border-radius:3px;color:var(--ink-soft);letter-spacing:.01em;
+  }
+  .status-select-wrap.st-concluida .status-select{color:#1B4FA8;}
+  .status-select-wrap.st-revisada .status-select{color:var(--accent-ink);}
   .topbar-actions{display:flex;gap:8px;flex:none;}
   .btn{
     display:inline-flex;align-items:center;gap:6px;
@@ -368,6 +412,43 @@
     .foto-lightbox,.foto-lightbox-fechar{display:none !important;}
   }
 
+  /* pop-up com o mapa de todos os pontos de um projeto — mesma família visual
+     do lightbox da foto, mas com uma caixa branca (o mapa em si já é escuro/
+     colorido, então o fundo aqui fica claro pra legenda ficar legível). */
+  .mapa-projeto-modal{
+    position:fixed;inset:0;z-index:200;background:rgba(10,14,12,.72);
+    display:flex;align-items:center;justify-content:center;padding:24px;
+  }
+  .mapa-projeto-box{
+    background:var(--surface);border-radius:var(--radius-m);box-shadow:0 8px 32px rgba(0,0,0,.4);
+    max-width:100%;max-height:100%;overflow:auto;
+  }
+  .mapa-projeto-head{
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
+    padding:12px 14px;border-bottom:1px solid var(--line);font-size:14px;font-weight:700;
+  }
+  .mapa-projeto-fechar{
+    width:28px;height:28px;border-radius:50%;border:none;background:var(--surface-alt);
+    color:var(--ink-soft);font-size:14px;line-height:1;cursor:pointer;flex:none;
+  }
+  .mapa-projeto-fechar:hover{background:var(--danger-tint);color:var(--danger);}
+  .mapa-projeto-corpo{padding:14px;}
+  .mapa-projeto-vazio{font-size:13px;color:var(--ink-soft);max-width:340px;margin:0;padding:20px 4px;}
+  .mp-viewport{position:relative;overflow:hidden;border-radius:var(--radius-s);background:#e5e5e5;border:1px solid var(--line-strong);}
+  .mp-viewport img{position:absolute;display:block;}
+  .mp-marker{position:absolute;transform:translate(-50%,-100%);filter:drop-shadow(0 1px 2px rgba(0,0,0,.5));}
+  .mp-legenda{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:10px;max-width:620px;}
+  .mp-legenda-item{font-size:11.5px;color:var(--ink-soft);display:flex;align-items:center;gap:5px;}
+  .mp-legenda-num{
+    flex:none;width:16px;height:16px;border-radius:50%;background:#D32F2F;color:#fff;
+    font-size:9.5px;font-weight:700;display:flex;align-items:center;justify-content:center;
+  }
+  @media (max-width:700px){
+    /* em telas estreitas o mapa não encolhe (isso desalinharia os blocos
+       calculados em px) — a caixa deixa rolar pra ver o resto, como uma foto grande. */
+    .mapa-projeto-box{max-width:94vw;max-height:88vh;}
+  }
+
   @media (max-width:520px){
     .geo-fields{grid-template-columns:1fr;}
   }
@@ -387,7 +468,9 @@
       overflow-x:auto;padding:14px 14px;gap:14px;
     }
     .rail-brand{border-bottom:none;padding-bottom:0;margin-bottom:0;border-right:1px solid var(--line);padding-right:14px;}
+    .rail-stats{flex:none;margin-bottom:0;width:210px;}
     .rail-projeto{margin-bottom:0;flex:none;width:170px;}
+    .projeto-resumo{margin-bottom:0;flex:none;width:190px;}
     .btn-new{width:auto;white-space:nowrap;}
     .rail-list{flex-direction:row;margin-top:0;overflow-x:auto;overflow-y:visible;}
     .rail-item{width:auto;min-width:150px;}
@@ -402,6 +485,7 @@
     @page{margin:14mm;}
     body{background:#fff;font-size:11.5px;}
     .rail,.topbar-actions,.btn-new,.rail-foot,.example-badge,.row-del,.btn-add,#toast{display:none !important;}
+    .status-select-wrap,.mapa-projeto-modal{display:none !important;}
     .geo-actions,.photo-actions,#photo-placeholder{display:none !important;}
     .geo-card,.photo-card{background:#fff;border-color:#999;}
     .rail{display:none;}
@@ -426,6 +510,11 @@
   #print-sheet{
     font-family:var(--font-sans);color:#1a1a1a;
   }
+  /* impressão em lote (relatório consolidado do projeto): cada sondagem vira
+     uma página própria — quebra depois de cada uma, menos a última (senão
+     sairia uma folha em branco extra no fim). */
+  .ps-page{page-break-after:always;break-after:page;}
+  .ps-page:last-child{page-break-after:auto;break-after:auto;}
   .ps-frame{
     border:2px solid #1a1a1a;padding:10mm;height:269mm;box-sizing:border-box;
     display:flex;flex-direction:column;

@@ -63,11 +63,27 @@
       </div>
       <button type="button" class="rail-user-logout" id="btn-logout" title="Sair">Sair</button>
     </div>
+    <div class="rail-stats" id="rail-stats">
+      <div class="rail-stat"><span class="rail-stat-num" id="stat-projetos">0</span><span class="rail-stat-label">projetos</span></div>
+      <div class="rail-stat"><span class="rail-stat-num" id="stat-sondagens">0</span><span class="rail-stat-label">sondagens</span></div>
+      <div class="rail-stat"><span class="rail-stat-num" id="stat-mes">0</span><span class="rail-stat-label">este mês</span></div>
+    </div>
     <div class="rail-projeto">
       <label class="rail-projeto-label" for="sel-projeto">Projeto</label>
       <select id="sel-projeto" class="rail-projeto-select">
         <option value="">Todos os projetos</option>
       </select>
+    </div>
+    <div class="projeto-resumo" id="projeto-resumo" hidden>
+      <div class="pr-row"><span class="pr-label">Sondagens</span><span class="pr-value" id="pr-qtd">0</span></div>
+      <div class="pr-row"><span class="pr-label">Prof. média</span><span class="pr-value" id="pr-prof">—</span></div>
+      <div class="pr-row"><span class="pr-label">Período</span><span class="pr-value" id="pr-periodo">—</span></div>
+      <div class="pr-row"><span class="pr-label">Incompletas</span><span class="pr-value" id="pr-incompletas">0</span></div>
+      <div class="pr-actions">
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-mapa-projeto">🗺️ Mapa do projeto</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-relatorio-projeto">📄 Relatório (.csv)</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-imprimir-projeto">🖨️ Imprimir todas</button>
+      </div>
     </div>
     <button class="btn-new" id="btn-new" type="button">+ Nova sondagem</button>
     <div class="rail-list" id="rail-list">
@@ -82,6 +98,13 @@
         <span class="tag" id="tb-sondagem">S-01</span>
         <span class="obra" id="tb-obra">Nome da obra</span>
         <span class="tag tag-projeto" id="tb-projeto" hidden></span>
+        <span class="status-select-wrap st-rascunho" id="status-select-wrap">
+          <select id="f-status" class="status-select" title="Status desta sondagem">
+            <option value="rascunho">● Rascunho</option>
+            <option value="concluida">● Concluída</option>
+            <option value="revisada">● Revisada</option>
+          </select>
+        </span>
       </div>
       <div class="topbar-actions">
         <button class="btn btn-ghost" id="btn-print-sheet" type="button">Folha do perfil</button>
@@ -294,6 +317,17 @@
 <div class="foto-lightbox" id="foto-lightbox" hidden>
   <button type="button" class="foto-lightbox-fechar" id="foto-lightbox-fechar" aria-label="Fechar">✕</button>
   <img id="foto-lightbox-img" alt="Foto do local da sondagem, ampliada">
+</div>
+
+<!-- Pop-up com o mapa de todos os pontos de um projeto -->
+<div class="mapa-projeto-modal" id="mapa-projeto-modal" hidden>
+  <div class="mapa-projeto-box">
+    <div class="mapa-projeto-head">
+      <span id="mapa-projeto-titulo">Mapa do projeto</span>
+      <button type="button" class="mapa-projeto-fechar" id="mapa-projeto-fechar" aria-label="Fechar">✕</button>
+    </div>
+    <div class="mapa-projeto-corpo" id="mapa-projeto-corpo"></div>
+  </div>
 </div>
 
 <div id="toast"></div>
