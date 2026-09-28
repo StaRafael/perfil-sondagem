@@ -1169,6 +1169,14 @@
       currentProjetos.push({ id: res.data.id, nome: res.data.nome });
       currentProjetos.sort(function(a,b){ return a.nome.localeCompare(b.nome,'pt-BR'); });
       window.__projetoSelecionadoId = res.data.id;
+      // mesma lógica do seletor: se a sondagem aberta na tela ainda não foi
+      // salva, ela já nasce marcada com o projeto recém-criado (é o caso mais
+      // comum: preencher uma sondagem e, no meio do caminho, criar o projeto
+      // dela pela primeira vez).
+      if(!currentDocId){
+        window.__docProjetoId = window.__projetoSelecionadoId;
+        updateTopbar();
+      }
       renderProjetoOptions();
       renderSessionList();
       toast('Projeto "'+res.data.nome+'" criado.');
@@ -2017,6 +2025,18 @@
     var v = $('#sel-projeto').value;
     if(v === '__novo__'){ criarNovoProjeto(); return; }
     window.__projetoSelecionadoId = v || null;
+    // Se a sondagem aberta na tela ainda não foi salva nenhuma vez
+    // (currentDocId nulo), ela passa a pertencer ao projeto escolhido agora
+    // também — sem isso, selecionar um projeto e preencher/salvar uma
+    // sondagem nova ficava sem efeito nenhum: o filtro mudava, mas a
+    // sondagem que já estava aberta continuava "solta", sem projeto, e por
+    // isso não aparecia depois nem na lista nem no resumo nem no mapa do
+    // projeto. Uma sondagem JÁ salva (currentDocId preenchido) não é tocada
+    // — só trocar o filtro nunca reatribui um registro existente sem querer.
+    if(!currentDocId){
+      window.__docProjetoId = window.__projetoSelecionadoId;
+      updateTopbar();
+    }
     renderSessionList();
   });
   $('#f-status').addEventListener('change', atualizarCorStatus);
