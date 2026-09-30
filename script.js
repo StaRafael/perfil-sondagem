@@ -84,6 +84,83 @@
     toastTimer = setTimeout(function(){ el.classList.remove('show'); }, 2400);
   }
 
+  /* ---------- ditado por voz (Web Speech API) ----------
+     Pensado pra quem tem pouca prática com celular: em vez de digitar, toca
+     no microfone e fala — igual gravar um áudio no WhatsApp. Usa o
+     reconhecimento de voz já embutido no navegador (de graça, sem precisar
+     de servidor nenhum nosso) — funciona bem no Chrome do Android, que é o
+     aparelho da equipe de campo. Em navegadores sem suporte (ex.: Safari no
+     iPhone) os microfones simplesmente não aparecem (ver checarSuporteVoz),
+     em vez de mostrar um botão que não funciona.
+     Só um campo é ditado por vez: tocar em outro microfone no meio de uma
+     gravação para a anterior e começa a nova — não dá pra duas ao mesmo
+     tempo (o navegador só permite um reconhecimento ativo por página). */
+  var SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+  var reconhecimentoVoz = null;   // instância ativa no momento (ou null)
+  var campoDitadoAtual = null;    // <input>/<textarea> que está recebendo o texto ditado agora
+  var botaoDitadoAtual = null;    // botão de microfone correspondente (pra tirar o "ouvindo" visual depois)
+
+  function checarSuporteVoz(){
+    // Sem suporte: some com TODOS os microfones de uma vez via CSS (inclusive
+    // os de linhas de litologia que ainda vão ser criadas depois — ver a
+    // regra "body.voz-indisponivel .btn-voice" no style.css), em vez de
+    // escondê-los um por um.
+    if(!SpeechRecognitionCtor) document.body.classList.add('voz-indisponivel');
+  }
+  function pararIndicacaoDitado(){
+    if(botaoDitadoAtual) botaoDitadoAtual.classList.remove('is-ouvindo');
+    botaoDitadoAtual = null;
+    campoDitadoAtual = null;
+  }
+  function criarReconhecimentoVoz(){
+    var r = new SpeechRecognitionCtor();
+    r.lang = 'pt-BR';
+    r.interimResults = false; // só o texto final — mais simples e mais confiável que ir atualizando palavra por palavra
+    r.maxAlternatives = 1;
+    r.continuous = false; // para sozinho quando a pessoa faz uma pausa ao falar — não precisa lembrar de tocar de novo pra parar
+    r.onresult = function(e){
+      var texto = '';
+      for(var i=0; i<e.results.length; i++) texto += e.results[i][0].transcript;
+      texto = texto.trim();
+      if(!campoDitadoAtual || !texto) return;
+      var atual = campoDitadoAtual.value;
+      // se o campo já tinha algo escrito, o texto falado é ACRESCENTADO no
+      // final (com um espaço), não substitui — assim dá pra ditar aos
+      // poucos, completando a frase, sem apagar o que já tinha.
+      campoDitadoAtual.value = atual ? (atual.replace(/\s+$/,'') + ' ' + texto) : texto;
+      // dispara os mesmos eventos de quando a pessoa digita na mão, pro
+      // resto do sistema reagir normalmente (marcar como alterado, redesenhar
+      // o perfil litológico, redimensionar o textarea, buscar endereço, etc.)
+      campoDitadoAtual.dispatchEvent(new Event('input', { bubbles:true }));
+      campoDitadoAtual.dispatchEvent(new Event('change', { bubbles:true }));
+    };
+    r.onerror = function(e){
+      if(e.error === 'no-speech') toast('Não ouvi nada — toca no microfone e fala de novo.');
+      else if(e.error === 'not-allowed' || e.error === 'service-not-allowed') toast('Autorize o uso do microfone pra usar o ditado por voz.');
+      else if(e.error !== 'aborted') toast('Não foi possível reconhecer o áudio agora.'); // "aborted" é só quando a própria pessoa cancelou — não precisa avisar
+    };
+    r.onend = function(){ pararIndicacaoDitado(); };
+    return r;
+  }
+  // Chamada pelo clique em qualquer microfone da tela — recebe o próprio
+  // botão (pra dar o feedback visual de "ouvindo") e o campo de texto que
+  // deve receber o que for reconhecido.
+  function alternarDitadoPorVoz(botao, campo){
+    if(!campo || !SpeechRecognitionCtor) return;
+    if(campoDitadoAtual === campo){
+      // tocou de novo no mesmo microfone que já está gravando -> para na hora
+      if(reconhecimentoVoz) reconhecimentoVoz.stop();
+      return;
+    }
+    if(reconhecimentoVoz) reconhecimentoVoz.stop(); // trocando de campo no meio de uma gravação
+    reconhecimentoVoz = criarReconhecimentoVoz();
+    campoDitadoAtual = campo;
+    botaoDitadoAtual = botao;
+    botao.classList.add('is-ouvindo');
+    try{ reconhecimentoVoz.start(); }
+    catch(err){ pararIndicacaoDitado(); toast('Não foi possível iniciar o microfone agora.'); }
+  }
+
   /* ---------- funções auxiliares de rádio (radio) ---------- */
   function getRadio(name){
     var el = document.querySelector('input[name="'+name+'"]:checked');
@@ -101,10 +178,20 @@
     tr.innerHTML =
       '<td><input type="text" inputmode="decimal" class="f-inicio" value="'+esc(data.inicio||'')+'" placeholder="0,00"></td>'+
       '<td><input type="text" inputmode="decimal" class="f-termino" value="'+esc(data.termino||'')+'" placeholder="0,00"></td>'+
-      '<td><textarea rows="1" class="f-litologia" placeholder="Ex.: Argila arenosa">'+esc(data.litologia||'')+'</textarea></td>'+
+      '<td><div class="td-voice">'+
+        '<textarea rows="1" class="f-litologia" placeholder="Ex.: Argila arenosa">'+esc(data.litologia||'')+'</textarea>'+
+        '<button type="button" class="btn-voice btn-voice-sm" title="Ditar por voz" aria-label="Ditar por voz">🎤</button>'+
+      '</div></td>'+
       '<td><textarea rows="1" class="f-cor" placeholder="Ex.: Marrom">'+esc(data.cor||'')+'</textarea></td>'+
       '<td><button type="button" class="row-del" title="Remover camada">✕</button></td>';
     tr.querySelector('.row-del').addEventListener('click', function(){ tr.remove(); redrawLith(); markDirty(); });
+    // Descrição da camada (litologia) por voz — o campo de texto livre mais
+    // demorado de digitar no celular durante o furo. Cada linha nova ganha
+    // seu próprio microfone automaticamente (não depende de um id fixo,
+    // já que a tabela pode ter qualquer quantidade de linhas).
+    tr.querySelector('.btn-voice').addEventListener('click', function(){
+      alternarDitadoPorVoz(this, tr.querySelector('.f-litologia'));
+    });
     return tr;
   }
   function addLitRow(data){
@@ -2039,6 +2126,17 @@
   });
   document.addEventListener('change', function(e){
     if(e.target.closest('main.sheet')) markDirty();
+  });
+
+  // Ditado por voz: some com todos os microfones se o navegador não suportar,
+  // e liga o clique de qualquer microfone com "data-voice-target" (os 3
+  // campos fixos — obra, técnico, localização) ao campo de texto certo. O
+  // microfone de cada linha de litologia já é ligado direto em litRow().
+  checarSuporteVoz();
+  document.addEventListener('click', function(e){
+    var botao = e.target.closest('.btn-voice[data-voice-target]');
+    if(!botao) return;
+    alternarDitadoPorVoz(botao, $('#'+botao.getAttribute('data-voice-target')));
   });
 
   $('#btn-add-lit').addEventListener('click', function(){ addLitRow(); redrawLith(); markDirty(); });

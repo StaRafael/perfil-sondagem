@@ -273,6 +273,37 @@
   .field input:focus-visible,.field textarea:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
   .field textarea{font-family:var(--font-sans);resize:vertical;min-height:38px;}
 
+  /* Ditado por voz — campo + microfone lado a lado. O botão soma no
+     .field-voice, não no .field (que continua só empilhando label+conteúdo
+     verticalmente), pra não bagunçar os campos que não têm microfone. */
+  .field-voice{display:flex;align-items:center;gap:6px;}
+  .field-voice input{flex:1;min-width:0;}
+  .btn-voice{
+    flex:none;width:32px;height:32px;border-radius:50%;
+    border:1px solid var(--line-strong);background:var(--surface);color:var(--ink-soft);
+    display:flex;align-items:center;justify-content:center;font-size:14px;line-height:1;
+    padding:0;transition:background .12s ease, border-color .12s ease, color .12s ease;
+  }
+  .btn-voice:hover{background:var(--accent-tint);border-color:var(--accent);color:var(--accent-ink);}
+  /* enquanto está ouvindo: fica vermelho e pulsando, igual gravando um
+     áudio — mesma linguagem visual que todo mundo já reconhece do WhatsApp. */
+  .btn-voice.is-ouvindo{background:var(--danger);border-color:var(--danger);color:#fff;animation:voice-pulse 1.1s ease-in-out infinite;}
+  @keyframes voice-pulse{
+    0%,100%{ box-shadow:0 0 0 0 rgba(179,64,42,.45); }
+    50%{ box-shadow:0 0 0 8px rgba(179,64,42,0); }
+  }
+  /* dentro da tabela de litologia, o microfone fica menor, ao lado da
+     descrição da camada (que é textarea — pode crescer, então alinha o
+     botão no topo em vez de centralizar). */
+  .td-voice{display:flex;align-items:flex-start;gap:4px;}
+  .td-voice textarea{flex:1;min-width:0;}
+  .btn-voice-sm{width:26px;height:26px;font-size:12px;margin-top:2px;}
+  /* Navegador sem suporte a reconhecimento de voz (ex.: Safari no iPhone) —
+     some com todos os microfones de uma vez, inclusive os que ainda vão ser
+     criados depois em novas linhas de litologia, em vez de mostrar um botão
+     que não vai funcionar. Ver checarSuporteVoz() no script.js. */
+  body.voz-indisponivel .btn-voice{display:none;}
+
   .group-row{display:flex;flex-wrap:wrap;gap:26px;row-gap:14px;}
   .group{display:flex;flex-direction:column;gap:8px;min-width:180px;}
   .group > .glabel{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.045em;color:var(--ink-soft);}
@@ -491,6 +522,7 @@
     .rail,.topbar-actions,.btn-new,.rail-foot,.example-badge,.row-del,.btn-add,#toast{display:none !important;}
     .status-select-wrap,.mapa-projeto-modal{display:none !important;}
     .geo-actions,.photo-actions,#photo-placeholder{display:none !important;}
+    .btn-voice{display:none !important;}
     .geo-card,.photo-card{background:#fff;border-color:#999;}
     .rail{display:none;}
     #app{display:block;}
