@@ -1848,42 +1848,275 @@
   }
   function fecharMapaProjeto(){ $('#mapa-projeto-modal').hidden = true; }
 
-  /* ---------- relatório consolidado do projeto (.csv) ----------
+  /* ---------- relatório consolidado do projeto (.xlsx) ----------
      Uma linha por sondagem do projeto selecionado, com os dados que mais
      interessam num relatório resumido (obra, status, profundidade,
-     coordenadas, endereço) — pra abrir direto no Excel/Google Sheets e
-     mandar pro cliente, sem precisar abrir cada ficha uma por uma. */
-  function exportarResumoProjetoCsv(){
+     coordenadas, endereço) — pra abrir direto no Excel e mandar pro
+     cliente, sem precisar abrir cada ficha uma por uma.
+
+     Era um .csv (texto puro), mas o Rafael pediu que saísse já bonito —
+     cabeçalho colorido, filtro automático, colunas no tamanho certo — e
+     isso um .csv não tem como guardar. Agora monta um .xlsx de verdade com
+     a biblioteca ExcelJS. Ela é um arquivo grande (~1 MB), então só é
+     carregada na hora em que o botão é clicado (carregarExcelJS), não no
+     carregamento do app — não pesa pro técnico que só está preenchendo
+     fichas no celular. */
+  var _exceljsCarregando = null;
+  function carregarExcelJS(){
+    if(window.ExcelJS) return Promise.resolve();
+    if(_exceljsCarregando) return _exceljsCarregando;
+    _exceljsCarregando = new Promise(function(resolve, reject){
+      var s = document.createElement('script');
+      s.src = 'exceljs.min.js';
+      s.onload = function(){ resolve(); };
+      s.onerror = function(){ _exceljsCarregando = null; reject(new Error('Falha ao carregar exceljs.min.js')); };
+      document.head.appendChild(s);
+    });
+    return _exceljsCarregando;
+  }
+  // Mesmas cores do seletor de status dentro da ficha (.st-rascunho/
+  // concluida/revisada no style.css) — pra quem abre o relatório reconhecer
+  // o status de cada sondagem pela cor, igual já reconhece dentro do app.
+  function corStatusExcel(v){
+    if(v==='concluida') return 'FFDCE8FB';
+    if(v==='revisada') return 'FFDCEAE4';
+    return 'FFE1E7E3'; // rascunho
+  }
+  function exportarResumoProjetoXlsx(){
     var filtro = window.__projetoSelecionadoId;
     if(!filtro){ toast('Selecione um projeto para exportar o relatório.'); return; }
     var docs = docsFiltradosPorProjeto();
     if(!docs.length){ toast('Nenhuma sondagem salva neste projeto ainda.'); return; }
     var nomeProjeto = nomeDoProjeto(filtro) || 'projeto';
-    var linhas = [['Sondagem','Poço','Obra','Status','Data início','Data término','Profundidade total (m)','Coordenada E','Coordenada N','Zona UTM','Endereço']];
-    docs.forEach(function(d){
-      var m = d.data.meta||{}, perfil = d.data.perfil||{}, local = d.data.local||{};
-      linhas.push([
-        m.sondagemNo||'', m.pocoNo||'', m.obra||'', statusInfo(d.data.status).texto,
-        fmtDateBR(m.dataInicio)||'', fmtDateBR(m.dataTermino)||'',
-        perfil.profTotalSondagem||'', local.utmE||'', local.utmN||'', local.utmZona||'', local.endereco||''
-      ]);
+
+    toast('Gerando relatório...');
+    carregarExcelJS().then(function(){
+      var wb = new ExcelJS.Workbook();
+      wb.creator = 'Perfil de Sondagem';
+      wb.created = new Date();
+      var ws = wb.addWorksheet('Relatório', { views:[{ state:'frozen', ySplit:1 }] });
+
+      var colunas = [
+        { header:'Sondagem', key:'sondagem', width:14 },
+        { header:'Poço', key:'poco', width:12 },
+        { header:'Obra', key:'obra', width:30 },
+        { header:'Status', key:'status', width:14 },
+        { header:'Data início', key:'dataInicio', width:13 },
+        { header:'Data término', key:'dataTermino', width:14 },
+        { header:'Profundidade total (m)', key:'profundidade', width:16 },
+        { header:'Coordenada E', key:'e', width:14 },
+        { header:'Coordenada N', key:'n', width:14 },
+        { header:'Zona UTM', key:'zona', width:10 },
+        { header:'Endereço', key:'endereco', width:38 }
+      ];
+      ws.columns = colunas;
+
+      docs.forEach(function(d){
+        var m = d.data.meta||{}, perfil = d.data.perfil||{}, local = d.data.local||{};
+        ws.addRow({
+          sondagem: m.sondagemNo||'',
+          poco: m.pocoNo||'',
+          obra: m.obra||'',
+          status: statusInfo(d.data.status).texto,
+          dataInicio: m.dataInicio ? new Date(m.dataInicio+'T00:00:00') : null,
+          dataTermino: m.dataTermino ? new Date(m.dataTermino+'T00:00:00') : null,
+          profundidade: parseNum(perfil.profTotalSondagem),
+          e: parseNum(local.utmE),
+          n: parseNum(local.utmN),
+          zona: local.utmZona||'',
+          endereco: local.endereco||''
+        });
+      });
+
+      // cabeçalho: verde da marca, negrito, texto branco, quebra de linha
+      var header = ws.getRow(1);
+      header.height = 32;
+      header.eachCell(function(cell){
+        cell.font = { bold:true, color:{ argb:'FFFFFFFF' }, size:11 };
+        cell.fill = { type:'pattern', pattern:'solid', fgColor:{ argb:'FF2F6F5E' } };
+        cell.alignment = { vertical:'middle', horizontal:'center', wrapText:true };
+      });
+
+      var idx = {};
+      colunas.forEach(function(c,i){ idx[c.key] = i+1; });
+
+      for(var r=2; r<=ws.rowCount; r++){
+        var row = ws.getRow(r);
+        var statusValor = docs[r-2].data.status || 'rascunho';
+        // listra leve nas linhas pares, pra facilitar a leitura de uma lista
+        // comprida, e pinta a célula de status com a cor do status.
+        row.eachCell({ includeEmpty:true }, function(cell){
+          cell.border = { bottom:{ style:'thin', color:{ argb:'FFE3E8E5' } } };
+          if(r % 2 === 0) cell.fill = { type:'pattern', pattern:'solid', fgColor:{ argb:'FFF5F7F6' } };
+        });
+        row.getCell(idx.status).fill = { type:'pattern', pattern:'solid', fgColor:{ argb: corStatusExcel(statusValor) } };
+        row.getCell(idx.status).alignment = { horizontal:'center' };
+        row.getCell(idx.dataInicio).numFmt = 'dd/mm/yyyy';
+        row.getCell(idx.dataTermino).numFmt = 'dd/mm/yyyy';
+        row.getCell(idx.profundidade).numFmt = '0.00';
+        row.getCell(idx.e).numFmt = '#,##0.00';
+        row.getCell(idx.n).numFmt = '#,##0.00';
+      }
+
+      ws.autoFilter = { from:{ row:1, column:1 }, to:{ row:1, column:colunas.length } };
+
+      return wb.xlsx.writeBuffer();
+    }).then(function(buffer){
+      var blob = new Blob([buffer], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      var url = URL.createObjectURL(blob);
+      var filename = 'relatorio-'+slugify(nomeProjeto)+'-'+new Date().toISOString().slice(0,10)+'.xlsx';
+      var a = document.createElement('a');
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+      toast('Relatório exportado: '+filename);
+    }).catch(function(err){
+      console.error(err);
+      toast('Não foi possível gerar o relatório. Tente de novo.');
     });
-    var csv = linhas.map(function(row){
-      return row.map(function(cell){
-        var s = String(cell==null?'':cell);
-        return /[;"\n]/.test(s) ? ('"'+s.replace(/"/g,'""')+'"') : s;
-      }).join(';');
-    }).join('\r\n');
-    // ';' como separador e um BOM no início — é o que o Excel em português
-    // espera pra abrir um .csv com acento certo sem precisar importar manual.
-    var blob = new Blob(['﻿'+csv], { type:'text/csv;charset=utf-8' });
-    var url = URL.createObjectURL(blob);
-    var filename = 'relatorio-'+slugify(nomeProjeto)+'-'+new Date().toISOString().slice(0,10)+'.csv';
-    var a = document.createElement('a');
-    a.href = url; a.download = filename;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
-    toast('Relatório exportado: '+filename);
+  }
+
+  /* ---------- "Perfis" do projeto — planilha técnica (.xlsx) ----------
+     O Rafael mandou o modelo que a empresa já usa pra entregar pro
+     cliente (Furo de Sondagem / Poço / Descrição litológica / NA / tubo
+     filtro etc., separado em abas PM, PMN e ST conforme o tipo de poço) e
+     pediu pra ficar igual. Essa função monta essa planilha — igual no
+     visual (cores, fonte, bordas, congelamento das 2 primeiras colunas) e
+     na estrutura (uma aba por tipo de poço), com os dados que a ficha já
+     tem: furo e poço (Identificação), a tabela de litologia inteira
+     (vira o texto "0,00 - 0,15 - ..." de cada camada, uma por linha) e os
+     campos de Perfil construtivo (NA, tubo filtro etc.).
+     Duas colunas do modelo original ("Cota da amostra enviada pra análise
+     química" e "Coluna d'água") não têm campo correspondente na ficha
+     hoje — ficam em branco, do jeito que já ficam em branco na maioria
+     das linhas do modelo original do Rafael também. As datas de
+     "instalação do poço" usam a mesma Data de início/término da
+     sondagem (a ficha não tem um campo separado só pra isso). */
+  function descricaoLitologica(data){
+    return (data.litologia||[])
+      .filter(function(r){ return r.inicio || r.termino || r.litologia; })
+      .map(function(r){ return (r.inicio||'')+' - '+(r.termino||'')+' - '+(r.litologia||''); })
+      .join('\n');
+  }
+  // Mesma lógica do modelo: poço "PMN-..." vai pra aba PMN, qualquer outro
+  // poço preenchido vai pra PM, e sondagem sem poço instalado (só o furo,
+  // tipo um trado/teste) vai pra ST.
+  function abaDoPoco(pocoNo){
+    var p = String(pocoNo||'').trim().toUpperCase();
+    if(!p) return 'ST';
+    if(p.indexOf('PMN') === 0) return 'PMN';
+    return 'PM';
+  }
+  function exportarPerfisProjetoXlsx(){
+    var filtro = window.__projetoSelecionadoId;
+    if(!filtro){ toast('Selecione um projeto para exportar os perfis.'); return; }
+    var docs = docsFiltradosPorProjeto();
+    if(!docs.length){ toast('Nenhuma sondagem salva neste projeto ainda.'); return; }
+    var nomeProjeto = nomeDoProjeto(filtro) || 'projeto';
+
+    var grupos = { PM:[], PMN:[], ST:[] };
+    docs.forEach(function(d){ grupos[abaDoPoco((d.data.meta||{}).pocoNo)].push(d); });
+
+    toast('Gerando planilha de perfis...');
+    carregarExcelJS().then(function(){
+      var wb = new ExcelJS.Workbook();
+      wb.creator = 'Perfil de Sondagem';
+      wb.created = new Date();
+
+      var colunas = [
+        { header:'Furo de\nSondagem', key:'furo', width:10 },
+        { header:'Poço de monitoramento instalado', key:'poco', width:17 },
+        { header:'Descrição litológica', key:'litologia', width:55 },
+        { header:'Profundidade da sondagem\n(m)', key:'profSondagem', width:13 },
+        { header:'Comprimento total do poço\n(m)', key:'profPoco', width:12 },
+        { header:'NA sondagem\n(m)', key:'naSondagem', width:10 },
+        { header:'NA estabilizado\n(m)', key:'naEstabilizado', width:11 },
+        { header:'Comprimento do tubo filtro\n(m)', key:'tuboFiltro', width:12 },
+        { header:'Seção filtrante\n(m)', key:'secaoFiltrante', width:10 },
+        { header:'Cota da amostra de solo enviada para análise química\n(m)', key:'cotaAmostra', width:14 },
+        { header:'Data de instalação\n(Início)', key:'dataInstIni', width:11 },
+        { header:'Data de instalação\n(Término)', key:'dataInstFim', width:13 },
+        { header:"Coluna d'água", key:'colunaAgua', width:12 }
+      ];
+      var colProfPoco = 5, colTuboFiltro = 8, colSecaoFiltrante = 9; // pra fórmula =E-H, igual ao modelo
+
+      ['PM','PMN','ST'].forEach(function(sigla){
+        var lista = grupos[sigla];
+        if(!lista.length) return;
+        var ws = wb.addWorksheet(sigla, { views:[{ state:'frozen', xSplit:2, ySplit:1 }] });
+        ws.columns = colunas;
+
+        lista.forEach(function(d){
+          var m = d.data.meta||{}, perfil = d.data.perfil||{};
+          ws.addRow({
+            furo: m.sondagemNo||'',
+            poco: m.pocoNo||'',
+            litologia: descricaoLitologica(d.data),
+            profSondagem: parseNum(perfil.profTotalSondagem),
+            profPoco: parseNum(perfil.profTotalPoco),
+            naSondagem: parseNum(perfil.naSondagem),
+            naEstabilizado: parseNum(perfil.naEstabilizado),
+            tuboFiltro: parseNum(perfil.tuboFiltro),
+            dataInstIni: m.dataInicio ? new Date(m.dataInicio+'T00:00:00') : null,
+            dataInstFim: m.dataTermino ? new Date(m.dataTermino+'T00:00:00') : null
+          });
+        });
+
+        // cabeçalho: cinza claro (igual ao modelo), Arial 9 negrito, com
+        // destaque nas 3 colunas que o modelo também destaca (fundo
+        // amarelo-claro no comprimento do poço, fonte verde no NA
+        // estabilizado, fonte azul no tubo filtro).
+        var header = ws.getRow(1);
+        header.height = 48;
+        header.eachCell({ includeEmpty:true }, function(cell){
+          cell.font = { name:'Arial', size:9, bold:true };
+          cell.fill = { type:'pattern', pattern:'solid', fgColor:{ argb:'FFE3E3E3' } };
+          cell.alignment = { vertical:'middle', horizontal:'center', wrapText:true };
+          cell.border = { top:{style:'thin'}, bottom:{style:'thin'}, left:{style:'thin'}, right:{style:'thin'} };
+        });
+        header.getCell(colProfPoco).fill = { type:'pattern', pattern:'solid', fgColor:{ argb:'FFFFF2CC' } };
+        header.getCell(7).font = { name:'Arial', size:9, bold:true, color:{ argb:'FF00B050' } };
+        header.getCell(colTuboFiltro).font = { name:'Arial', size:9, bold:true, color:{ argb:'FF0070C0' } };
+
+        for(var r=2; r<=ws.rowCount; r++){
+          var row = ws.getRow(r);
+          var profPoco = row.getCell(colProfPoco).value, tubo = row.getCell(colTuboFiltro).value;
+          row.getCell(colSecaoFiltrante).value = {
+            formula: 'E'+r+'-H'+r,
+            result: (typeof profPoco==='number' && typeof tubo==='number') ? (profPoco-tubo) : undefined
+          };
+          var numLinhas = String(row.getCell(3).value||'').split('\n').length;
+          row.height = Math.max(24, 13*numLinhas + 10);
+          row.eachCell({ includeEmpty:true }, function(cell, colNumber){
+            cell.font = { name:'Arial', size:9 };
+            cell.border = { top:{style:'thin'}, bottom:{style:'thin'}, left:{style:'thin'}, right:{style:'thin'} };
+            cell.alignment = { vertical:'center', horizontal: colNumber===3 ? 'left':'center', wrapText: colNumber===3 };
+            if(r % 2 === 0) cell.fill = { type:'pattern', pattern:'solid', fgColor:{ argb:'FFDAE3F3' } };
+          });
+          row.getCell(1).font = { name:'Arial', size:9, bold:true };
+          row.getCell(2).font = { name:'Arial', size:9, bold:true };
+          [4,5,6,7,8,9].forEach(function(c){ row.getCell(c).numFmt = '0.00'; });
+          row.getCell(11).numFmt = 'dd/mm/yyyy';
+          row.getCell(12).numFmt = 'dd/mm/yyyy';
+        }
+
+        ws.autoFilter = { from:{ row:1, column:1 }, to:{ row:1, column:colunas.length } };
+      });
+
+      return wb.xlsx.writeBuffer();
+    }).then(function(buffer){
+      var blob = new Blob([buffer], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      var url = URL.createObjectURL(blob);
+      var filename = 'perfis-'+slugify(nomeProjeto)+'-'+new Date().toISOString().slice(0,10)+'.xlsx';
+      var a = document.createElement('a');
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+      toast('Planilha exportada: '+filename);
+    }).catch(function(err){
+      console.error(err);
+      toast('Não foi possível gerar a planilha. Tente de novo.');
+    });
   }
 
   /* ---------- impressão em lote (todas as sondagens do projeto) ----------
@@ -2168,7 +2401,8 @@
     window.__docProjetoId = $('#tb-projeto').value || null;
   });
   $('#btn-mapa-projeto').addEventListener('click', abrirMapaProjeto);
-  $('#btn-relatorio-projeto').addEventListener('click', exportarResumoProjetoCsv);
+  $('#btn-relatorio-projeto').addEventListener('click', exportarResumoProjetoXlsx);
+  $('#btn-perfis-projeto').addEventListener('click', exportarPerfisProjetoXlsx);
   $('#btn-imprimir-projeto').addEventListener('click', imprimirTodasDoProjeto);
   $('#mapa-projeto-fechar').addEventListener('click', fecharMapaProjeto);
   $('#mapa-projeto-modal').addEventListener('click', function(e){
