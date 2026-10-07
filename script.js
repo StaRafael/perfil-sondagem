@@ -2032,13 +2032,13 @@
         { header:'NA sondagem\n(m)', key:'naSondagem', width:10 },
         { header:'NA estabilizado\n(m)', key:'naEstabilizado', width:11 },
         { header:'Comprimento do tubo filtro\n(m)', key:'tuboFiltro', width:12 },
-        { header:'Seção filtrante\n(m)', key:'secaoFiltrante', width:10 },
+        { header:'Comprimento do tubo liso\n(m)', key:'tuboLiso', width:11 },
         { header:'Cota da amostra de solo enviada para análise química\n(m)', key:'cotaAmostra', width:14 },
         { header:'Data de instalação\n(Início)', key:'dataInstIni', width:11 },
         { header:'Data de instalação\n(Término)', key:'dataInstFim', width:13 },
         { header:"Coluna d'água", key:'colunaAgua', width:12 }
       ];
-      var colProfPoco = 5, colTuboFiltro = 8, colSecaoFiltrante = 9; // pra fórmula =E-H, igual ao modelo
+      var colProfPoco = 5, colTuboFiltro = 8, colTuboLiso = 9; // pra fórmula de fallback =E-H, ver abaixo
 
       ['PM','PMN','ST'].forEach(function(sigla){
         var lista = grupos[sigla];
@@ -2057,6 +2057,12 @@
             naSondagem: parseNum(perfil.naSondagem),
             naEstabilizado: parseNum(perfil.naEstabilizado),
             tuboFiltro: parseNum(perfil.tuboFiltro),
+            // Comprimento do tubo liso: usa o valor que o técnico preencheu na
+            // ficha (Perfil construtivo); só quando essa sondagem não tem
+            // esse campo preenchido é que a célula vira uma fórmula
+            // =Comprimento total do poço − Comprimento do tubo filtro (ver
+            // o preenchimento de fallback logo abaixo).
+            tuboLiso: parseNum(perfil.tuboLiso),
             dataInstIni: m.dataInicio ? new Date(m.dataInicio+'T00:00:00') : null,
             dataInstFim: m.dataTermino ? new Date(m.dataTermino+'T00:00:00') : null
           });
@@ -2081,10 +2087,15 @@
         for(var r=2; r<=ws.rowCount; r++){
           var row = ws.getRow(r);
           var profPoco = row.getCell(colProfPoco).value, tubo = row.getCell(colTuboFiltro).value;
-          row.getCell(colSecaoFiltrante).value = {
-            formula: 'E'+r+'-H'+r,
-            result: (typeof profPoco==='number' && typeof tubo==='number') ? (profPoco-tubo) : undefined
-          };
+          // Só calcula o tubo liso por fórmula quando a ficha não tinha esse
+          // campo preenchido — quando tinha, o valor real já está na célula
+          // (preenchido pelo addRow acima) e fica intocado.
+          if(row.getCell(colTuboLiso).value == null){
+            row.getCell(colTuboLiso).value = {
+              formula: 'E'+r+'-H'+r,
+              result: (typeof profPoco==='number' && typeof tubo==='number') ? (profPoco-tubo) : undefined
+            };
+          }
           var numLinhas = String(row.getCell(3).value||'').split('\n').length;
           row.height = Math.max(24, 13*numLinhas + 10);
           row.eachCell({ includeEmpty:true }, function(cell, colNumber){
@@ -2165,6 +2176,7 @@
       else if(!mapa.naEstabilizado && txt.indexOf('na estabilizado')===0) mapa.naEstabilizado=c;
       else if(!mapa.naSondagem && txt.indexOf('na sondagem')===0) mapa.naSondagem=c;
       else if(!mapa.tuboFiltro && txt.indexOf('comprimento do tubo filtro')===0) mapa.tuboFiltro=c;
+      else if(!mapa.tuboLiso && (txt.indexOf('comprimento do tubo liso')===0 || txt.indexOf('secao filtrante')===0)) mapa.tuboLiso=c;
       else if(txt.indexOf('data de instalacao')===0 && txt.indexOf('inicio')>=0) mapa.dataInstIni=c;
       else if(txt.indexOf('data de instalacao')===0 && (txt.indexOf('termino')>=0 || txt.indexOf('fim')>=0)) mapa.dataInstFim=c;
     }
@@ -2173,7 +2185,14 @@
   function numeroParaTexto(v){
     v = valorCelula(v);
     if(v==null || v==='') return '';
-    if(typeof v==='number') return String(v).replace('.',',');
+    if(typeof v==='number'){
+      // arredonda pra 2 casas antes de virar texto — subtração de ponto
+      // flutuante (ex.: 4,16 - 3 = 1.1600000000000001, tanto lendo o
+      // resultado de uma fórmula quanto calculando o tubo liso aqui mesmo)
+      // senão aparece um número com uma dúzia de casas decimais na ficha.
+      var arred = Math.round(v*100)/100;
+      return String(arred).replace('.',',');
+    }
     return String(v).trim();
   }
   function dataParaISO(v){
@@ -2257,6 +2276,15 @@
           var dataIni = mapa.dataInstIni ? dataParaISO(row.getCell(mapa.dataInstIni).value) : '';
           var dataFim = mapa.dataInstFim ? dataParaISO(row.getCell(mapa.dataInstFim).value) : '';
 
+          // Comprimento do tubo liso: vem da coluna própria quando a planilha
+          // tem uma (ver mapaCabecalhoPerfis); quando não tem, calcula pela
+          // mesma conta do modelo (comprimento total do poço − tubo filtro).
+          var profPocoNum = mapa.profPoco ? parseNum(valorCelula(row.getCell(mapa.profPoco).value)) : null;
+          var tuboFiltroNum = mapa.tuboFiltro ? parseNum(valorCelula(row.getCell(mapa.tuboFiltro).value)) : null;
+          var tuboLisoTxt = mapa.tuboLiso
+            ? numeroParaTexto(row.getCell(mapa.tuboLiso).value)
+            : (profPocoNum!=null && tuboFiltroNum!=null ? numeroParaTexto(profPocoNum - tuboFiltroNum) : '');
+
           var data = {
             meta: {
               obra: nomeProjeto, nOS:'', tecnico:'', equipeSondagem:'', tempo:'',
@@ -2274,7 +2302,7 @@
               diametroPoco:'',
               naEstabilizado: mapa.naEstabilizado ? numeroParaTexto(row.getCell(mapa.naEstabilizado).value) : '',
               tuboFiltro: mapa.tuboFiltro ? numeroParaTexto(row.getCell(mapa.tuboFiltro).value) : '',
-              tuboLiso:''
+              tuboLiso: tuboLisoTxt
             },
             carimbo: {},
             isExample: false,
