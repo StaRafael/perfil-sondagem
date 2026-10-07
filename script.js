@@ -467,8 +467,14 @@
         if(Math.abs(ly-y) > 1.5){
           body.push('<path d="M26,'+ly+' L'+(colX-10)+','+y+'" fill="none" stroke="var(--warn)" stroke-width=".5"/>');
         }
-        var marcaAmostra = r.amostra ? '<tspan fill="var(--ink)" font-weight="700"> *</tspan>' : '';
-        body.push('<text x="26" y="'+(ly+2.8)+'" font-family="var(--font-mono)" font-size="8" text-anchor="end" fill="var(--warn)">'+esc(r.vocppm)+marcaAmostra+'</text>');
+        // o "*" fica numa marca própria, à direita do valor (não colada nele) — quando
+        // era um tspan dentro do mesmo <text> ancorado em "end", o texto todo (valor +
+        // asterisco) crescia pra esquerda e o primeiro dígito do valor saía cortado da
+        // viewBox (ex.: "0,50" virava "),50" na tela, ilegível).
+        body.push('<text x="26" y="'+(ly+2.8)+'" font-family="var(--font-mono)" font-size="8" text-anchor="end" fill="var(--warn)">'+esc(r.vocppm)+'</text>');
+        if(r.amostra){
+          body.push('<text x="30" y="'+(ly+2.8)+'" font-family="var(--font-mono)" font-size="8" font-weight="700" fill="var(--ink)">*</text>');
+        }
       });
     }
 
