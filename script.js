@@ -1315,22 +1315,29 @@
   function setActiveRailItem(id){
     $all('.rail-item').forEach(function(el){ el.classList.toggle('is-active', el.dataset.id===id); });
   }
-  // Filtra a lista pelo projeto escolhido no seletor da barra lateral (ou
-  // mostra todas, quando "Todos os projetos" está selecionado). Sondagens
-  // salvas antes desse recurso existir, sem projeto nenhum, continuam
-  // aparecendo normalmente em "Todos os projetos" — nada muda pra elas.
+  // Filtra a lista pelo projeto escolhido no seletor da barra lateral. Em
+  // "Todos os projetos" NÃO mostra as sondagens de todos os projetos juntas
+  // (ficava uma lista enorme e confusa) — só as sondagens avulsas, sem
+  // projeto nenhum (ex.: as salvas antes desse recurso existir). Pra ver as
+  // sondagens de um projeto específico, é preciso selecioná-lo no seletor.
   function docsFiltradosPorProjeto(){
     var filtro = window.__projetoSelecionadoId || null;
-    if(!filtro) return sessionDocs;
+    if(!filtro) return sessionDocs.filter(function(d){ return !(d.data.projetoId); });
     return sessionDocs.filter(function(d){ return (d.data.projetoId||null) === filtro; });
   }
   function renderSessionList(){
     var list = $('#rail-list');
     var docs = docsFiltradosPorProjeto();
     if(!docs.length){
-      list.innerHTML = window.__projetoSelecionadoId
-        ? '<div class="rail-empty">Nenhuma sondagem salva neste projeto ainda.</div>'
-        : '<div class="rail-empty">Nenhuma sondagem salva ainda. Preencha a ficha e clique em "Salvar".</div>';
+      var msg;
+      if(window.__projetoSelecionadoId){
+        msg = 'Nenhuma sondagem salva neste projeto ainda.';
+      } else if(sessionDocs.length){
+        msg = 'Selecione um projeto acima para ver as sondagens dele.';
+      } else {
+        msg = 'Nenhuma sondagem salva ainda. Preencha a ficha e clique em "Salvar".';
+      }
+      list.innerHTML = '<div class="rail-empty">'+msg+'</div>';
       atualizarEstatisticas();
       atualizarResumoProjeto();
       return;
