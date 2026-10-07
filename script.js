@@ -452,11 +452,14 @@
     // esquerda dos números da grade de profundidade, já que são leituras pontuais de
     // campo ligadas a uma profundidade específica, e não uma propriedade da coluna
     var vocMarks = getVocRows().map(function(r){
-      return { prof: parseNum(r.prof), vocppm: (r.vocppm||'').trim() };
+      return { prof: parseNum(r.prof), vocppm: (r.vocppm||'').trim(), amostra: r.amostraUmida==='sim' };
     }).filter(function(r){ return r.prof!=null && r.prof>=0 && r.prof<=realBottom+1e-6 && r.vocppm!==''; })
       .sort(function(a,b){ return a.prof-b.prof; });
     if(vocMarks.length){
       body.push('<text x="4" y="'+(titleText?24:14)+'" font-family="var(--font-mono)" font-size="8" fill="var(--warn)">VOC (ppm)</text>');
+      if(vocMarks.some(function(r){ return r.amostra; })){
+        body.push('<text x="4" y="'+(titleText?33:23)+'" font-family="var(--font-mono)" font-size="7" fill="var(--ink)">* amostra úmida</text>');
+      }
       var vocCursorY = marginTop;
       vocMarks.forEach(function(r){
         var y = marginTop + r.prof*scale;
@@ -466,7 +469,8 @@
         if(Math.abs(ly-y) > 1.5){
           body.push('<path d="M26,'+ly+' L'+(colX-10)+','+y+'" fill="none" stroke="var(--warn)" stroke-width=".5"/>');
         }
-        body.push('<text x="26" y="'+(ly+2.8)+'" font-family="var(--font-mono)" font-size="8" text-anchor="end" fill="var(--warn)">'+esc(r.vocppm)+'</text>');
+        var marcaAmostra = r.amostra ? '<tspan fill="var(--ink)" font-weight="700"> *</tspan>' : '';
+        body.push('<text x="26" y="'+(ly+2.8)+'" font-family="var(--font-mono)" font-size="8" text-anchor="end" fill="var(--warn)">'+esc(r.vocppm)+marcaAmostra+'</text>');
       });
     }
 
