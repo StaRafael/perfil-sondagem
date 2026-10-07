@@ -2119,6 +2119,196 @@
     });
   }
 
+  /* ---------- importar perfis das abas PM/PMN (.xlsx) ----------
+     Caminho inverso do botão "Perfis (.xlsx)": em vez de GERAR a planilha
+     a partir das fichas, LÊ uma planilha pronta (no formato do modelo da
+     empresa) e cria uma ficha nova aqui pra cada linha das abas PM e PMN
+     — pra não precisar redigitar sondagens que já existem num Excel
+     antigo. Usa a mesma biblioteca ExcelJS do botão de gerar (ela também
+     lê .xlsx, não só escreve), carregada só na hora do clique.
+     Acha as colunas pelo TEXTO do cabeçalho (não pela posição) — assim
+     funciona mesmo se a ordem mudar um pouco de uma aba pra outra (o
+     modelo real do Rafael já tem pequenas diferenças entre abas).
+     Cada sondagem importada entra no projeto selecionado no momento (por
+     isso o botão só aparece com um projeto escolhido), com status
+     "Concluída" (são sondagens já executadas) e nome da obra igual ao
+     nome do projeto — a planilha de origem não tem essa coluna, dá pra
+     corrigir depois em cada ficha se for diferente. Se já existir uma
+     sondagem com o mesmo "Furo de Sondagem" neste projeto, a linha é
+     pulada (não duplica) — rodar a importação de novo é seguro. */
+  function valorCelula(v){
+    if(v==null) return '';
+    if(typeof v==='object'){
+      if(v instanceof Date) return v;
+      if(v.richText) return v.richText.map(function(rt){ return rt.text; }).join('');
+      if(v.result!=null) return v.result;
+      if(v.text!=null) return v.text;
+      return '';
+    }
+    return v;
+  }
+  function normalizaCabecalho(s){
+    return stripAccents(String(s||'')).toLowerCase().replace(/\s+/g,' ').trim();
+  }
+  function mapaCabecalhoPerfis(ws){
+    var mapa = {};
+    var row1 = ws.getRow(1);
+    var n = Math.max(ws.columnCount, 14);
+    for(var c=1; c<=n; c++){
+      var txt = normalizaCabecalho(valorCelula(row1.getCell(c).value));
+      if(!txt) continue;
+      if(!mapa.furo && txt.indexOf('furo de sondagem')===0) mapa.furo=c;
+      else if(!mapa.poco && txt.indexOf('poco de monitoramento')===0) mapa.poco=c;
+      else if(!mapa.litologia && txt.indexOf('descricao litologica')===0) mapa.litologia=c;
+      else if(!mapa.profSondagem && txt.indexOf('profundidade da sondagem')===0) mapa.profSondagem=c;
+      else if(!mapa.profPoco && txt.indexOf('comprimento total do poco')===0) mapa.profPoco=c;
+      else if(!mapa.naEstabilizado && txt.indexOf('na estabilizado')===0) mapa.naEstabilizado=c;
+      else if(!mapa.naSondagem && txt.indexOf('na sondagem')===0) mapa.naSondagem=c;
+      else if(!mapa.tuboFiltro && txt.indexOf('comprimento do tubo filtro')===0) mapa.tuboFiltro=c;
+      else if(txt.indexOf('data de instalacao')===0 && txt.indexOf('inicio')>=0) mapa.dataInstIni=c;
+      else if(txt.indexOf('data de instalacao')===0 && (txt.indexOf('termino')>=0 || txt.indexOf('fim')>=0)) mapa.dataInstFim=c;
+    }
+    return mapa;
+  }
+  function numeroParaTexto(v){
+    v = valorCelula(v);
+    if(v==null || v==='') return '';
+    if(typeof v==='number') return String(v).replace('.',',');
+    return String(v).trim();
+  }
+  function dataParaISO(v){
+    v = valorCelula(v);
+    if(!v) return '';
+    if(v instanceof Date) return v.toISOString().slice(0,10);
+    var m = String(v).trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? m[0] : '';
+  }
+  function litologiaDoTexto(v){
+    var txt = valorCelula(v);
+    var linhas = String(txt||'').split('\n').map(function(l){ return l.trim(); }).filter(Boolean);
+    var linhaRe = /^([\d.,]+)\s*-\s*([\d.,]+)\s*-\s*(.+)$/;
+    var rows = linhas.map(function(l){
+      var m = l.match(linhaRe);
+      return m ? { inicio:m[1].trim(), termino:m[2].trim(), litologia:m[3].trim(), cor:'' } : null;
+    }).filter(Boolean);
+    return rows.length ? rows : [{}];
+  }
+  function linhasDaAba(ws, mapa){
+    if(!mapa.furo) return [];
+    var linhas = [];
+    var vazias = 0;
+    for(var r=2; r<=ws.rowCount && vazias<25; r++){
+      var furo = String(valorCelula(ws.getRow(r).getCell(mapa.furo).value)||'').trim();
+      if(!furo){ vazias++; continue; }
+      vazias = 0;
+      linhas.push(r);
+    }
+    return linhas;
+  }
+  function importarPerfisXlsx(file){
+    if(!file) return;
+    var filtro = window.__projetoSelecionadoId;
+    if(!filtro){ toast('Selecione (ou crie) o projeto onde essas sondagens vão entrar antes de importar.'); return; }
+    var nomeProjeto = nomeDoProjeto(filtro) || 'projeto';
+
+    var reader = new FileReader();
+    reader.onload = function(){
+      carregarExcelJS().then(function(){
+        var wbLido = new ExcelJS.Workbook();
+        return wbLido.xlsx.load(reader.result);
+      }).then(function(wbLido){
+        var existentes = {};
+        docsFiltradosPorProjeto().forEach(function(d){
+          var cod = stripAccents(String((d.data.meta||{}).sondagemNo||'')).toLowerCase().trim();
+          if(cod) existentes[cod] = true;
+        });
+
+        var candidatas = [];
+        ['PM','PMN'].forEach(function(sigla){
+          var ws = wbLido.getWorksheet(sigla);
+          if(!ws) return;
+          var mapa = mapaCabecalhoPerfis(ws);
+          if(!mapa.furo) return; // aba sem o cabeçalho esperado — ignora
+          linhasDaAba(ws, mapa).forEach(function(r){
+            candidatas.push({ ws:ws, mapa:mapa, r:r });
+          });
+        });
+
+        if(!candidatas.length){
+          toast('Não encontrei linhas nas abas PM/PMN desse arquivo. Confira se ele tem essas abas, no formato do modelo.');
+          return;
+        }
+
+        var confirmaMsg = 'Encontrei '+candidatas.length+' sondagem(ns) nas abas PM/PMN de "'+file.name+'".\n'+
+          'Vão entrar no projeto "'+nomeProjeto+'", com a obra "'+nomeProjeto+'" e status "Concluída" (dá pra ajustar depois em cada ficha).\n'+
+          'As que já existirem aqui (mesmo "Furo de Sondagem") são puladas, sem duplicar.\n\nContinuar?';
+        if(!window.confirm(confirmaMsg)) return;
+
+        var importadas = 0, puladas = 0, primeiroId = null;
+        candidatas.forEach(function(item){
+          var ws = item.ws, mapa = item.mapa, r = item.r;
+          var row = ws.getRow(r);
+          var furo = String(valorCelula(row.getCell(mapa.furo).value)||'').trim();
+          var codNorm = stripAccents(furo).toLowerCase().trim();
+          if(existentes[codNorm]){ puladas++; return; }
+          existentes[codNorm] = true;
+
+          var poco = mapa.poco ? String(valorCelula(row.getCell(mapa.poco).value)||'').trim() : '';
+          var dataIni = mapa.dataInstIni ? dataParaISO(row.getCell(mapa.dataInstIni).value) : '';
+          var dataFim = mapa.dataInstFim ? dataParaISO(row.getCell(mapa.dataInstFim).value) : '';
+
+          var data = {
+            meta: {
+              obra: nomeProjeto, nOS:'', tecnico:'', equipeSondagem:'', tempo:'',
+              sondagemNo: furo, pocoNo: poco, localizacao:'',
+              dataInicio: dataIni, horaInicio:'', dataTermino: dataFim, horaTermino:''
+            },
+            equip: {},
+            litologia: mapa.litologia ? litologiaDoTexto(row.getCell(mapa.litologia).value) : [{}],
+            voc: [],
+            perfil: {
+              profTotalSondagem: mapa.profSondagem ? numeroParaTexto(row.getCell(mapa.profSondagem).value) : '',
+              diametroSondagem:'',
+              naSondagem: mapa.naSondagem ? numeroParaTexto(row.getCell(mapa.naSondagem).value) : '',
+              profTotalPoco: mapa.profPoco ? numeroParaTexto(row.getCell(mapa.profPoco).value) : '',
+              diametroPoco:'',
+              naEstabilizado: mapa.naEstabilizado ? numeroParaTexto(row.getCell(mapa.naEstabilizado).value) : '',
+              tuboFiltro: mapa.tuboFiltro ? numeroParaTexto(row.getCell(mapa.tuboFiltro).value) : '',
+              tuboLiso:''
+            },
+            carimbo: {},
+            isExample: false,
+            status: 'concluida',
+            projetoId: filtro
+          };
+
+          var id = uid();
+          if(!primeiroId) primeiroId = id;
+          sessionDocs.push({ id:id, data:data });
+          syncSondagemToCloud(id, data);
+          importadas++;
+        });
+
+        if(primeiroId){
+          currentDocId = primeiroId;
+          renderForm(docComId(primeiroId));
+        }
+        renderSessionList();
+        setActiveRailItem(currentDocId);
+        toast(importadas+' sondagem(ns) importada(s)'+(puladas?' ('+puladas+' já existiam e foram puladas)':'')+'.');
+      }).catch(function(err){
+        console.error(err);
+        toast('Não foi possível ler esse arquivo. Confira se é um .xlsx no formato do modelo.');
+      });
+    };
+    reader.onerror = function(){ toast('Não foi possível ler o arquivo.'); };
+    reader.readAsArrayBuffer(file);
+  }
+  function docComId(id){
+    var found = sessionDocs.filter(function(d){ return d.id===id; })[0];
+    return found ? found.data : blankData();
+  }
+
   /* ---------- impressão em lote (todas as sondagens do projeto) ----------
      Reaproveita exatamente o mesmo buildPrintSheetHtml() de "Folha do
      perfil" (uma sondagem por vez) — só que aqui carregamos cada sondagem
@@ -2403,6 +2593,12 @@
   $('#btn-mapa-projeto').addEventListener('click', abrirMapaProjeto);
   $('#btn-relatorio-projeto').addEventListener('click', exportarResumoProjetoXlsx);
   $('#btn-perfis-projeto').addEventListener('click', exportarPerfisProjetoXlsx);
+  $('#btn-importar-perfis').addEventListener('click', function(){ $('#file-importar-perfis').click(); });
+  $('#file-importar-perfis').addEventListener('change', function(e){
+    var file = e.target.files && e.target.files[0];
+    importarPerfisXlsx(file);
+    e.target.value = ''; // permite escolher o mesmo arquivo de novo depois
+  });
   $('#btn-imprimir-projeto').addEventListener('click', imprimirTodasDoProjeto);
   $('#mapa-projeto-fechar').addEventListener('click', fecharMapaProjeto);
   $('#mapa-projeto-modal').addEventListener('click', function(e){
