@@ -455,11 +455,9 @@
       return { prof: parseNum(r.prof), vocppm: (r.vocppm||'').trim(), amostra: r.amostraUmida==='sim' };
     }).filter(function(r){ return r.prof!=null && r.prof>=0 && r.prof<=realBottom+1e-6 && r.vocppm!==''; })
       .sort(function(a,b){ return a.prof-b.prof; });
+    var temAmostraUmida = vocMarks.some(function(r){ return r.amostra; });
     if(vocMarks.length){
       body.push('<text x="4" y="'+(titleText?24:14)+'" font-family="var(--font-mono)" font-size="8" fill="var(--warn)">VOC (ppm)</text>');
-      if(vocMarks.some(function(r){ return r.amostra; })){
-        body.push('<text x="4" y="'+(titleText?33:23)+'" font-family="var(--font-mono)" font-size="7" fill="var(--ink)">* amostra úmida</text>');
-      }
       var vocCursorY = marginTop;
       vocMarks.forEach(function(r){
         var y = marginTop + r.prof*scale;
@@ -508,7 +506,7 @@
         body.join('')+
       '</svg>';
 
-    return { rows:rows, hasPoco:hasPoco, tuboLiso:tuboLiso, tuboFiltro:tuboFiltro, wellCaption:wellCaption, na:na, svgMarkup: rows.length ? svg : '' };
+    return { rows:rows, hasPoco:hasPoco, tuboLiso:tuboLiso, tuboFiltro:tuboFiltro, wellCaption:wellCaption, na:na, temAmostraUmida:temAmostraUmida, svgMarkup: rows.length ? svg : '' };
   }
 
   function redrawLith(printMode){
@@ -519,7 +517,7 @@
     // legenda: trechos da construção do poço + demais campos do perfil construtivo,
     // mostrados como texto para que todo campo apareça mesmo quando não é desenhado em escala.
     var legend = $('#lith-legend');
-    if(!built.hasPoco){ legend.innerHTML=''; }
+    if(!built.hasPoco && !built.temAmostraUmida){ legend.innerHTML=''; }
     else{
       legend.innerHTML = wellLegendHtml(built);
     }
@@ -527,6 +525,9 @@
 
   // Pequena legenda em HTML para a pista de construção do poço (usada na tela e
   // reaproveitada, de forma expandida, pela legenda do "carimbo" da folha única).
+  // Também reaproveitada para explicar o "*" ao lado das leituras de VOC com
+  // amostra úmida, já que esse texto saiu de dentro do SVG (poluía o desenho,
+  // ficava pequeno demais pra ler) e passou a morar aqui, junto das outras legendas.
   function wellLegendHtml(built){
     var seloConcreto=$('#f-seloConcreto').value, seloBCima=$('#f-seloBentonitaCima').value,
         seloBBaixo=$('#f-seloBentonitaBaixo').value, preFiltroEsp=$('#f-preFiltro').value;
@@ -535,12 +536,18 @@
     if(seloBCima) extra.push('Selo de bentonita (cima): '+esc(seloBCima)+' m');
     if(preFiltroEsp) extra.push('Espessura do pré-filtro: '+esc(preFiltroEsp)+' m');
     if(seloBBaixo) extra.push('Selo de bentonita (baixo): '+esc(seloBBaixo)+' m');
-    var html = '<div class="lg-title">Poço de monitoramento</div>';
-    html += '<div class="lg-row"><span class="lg-swatch" style="background:#8FC1DE"></span>'+esc(built.wellCaption[0]||'Tubo liso')+'</div>';
-    if(built.wellCaption[1]!=null || built.tuboFiltro>0){
-      html += '<div class="lg-row"><span class="lg-swatch" style="background:#8FC1DE;background-image:repeating-linear-gradient(0deg,rgba(30,60,80,.55) 0 1.5px,transparent 1.5px 4px)"></span>'+esc(built.wellCaption[1]||'Pré-filtro ranhurado')+'</div>';
+    var html = '';
+    if(built.hasPoco){
+      html += '<div class="lg-title">Poço de monitoramento</div>';
+      html += '<div class="lg-row"><span class="lg-swatch" style="background:#8FC1DE"></span>'+esc(built.wellCaption[0]||'Tubo liso')+'</div>';
+      if(built.wellCaption[1]!=null || built.tuboFiltro>0){
+        html += '<div class="lg-row"><span class="lg-swatch" style="background:#8FC1DE;background-image:repeating-linear-gradient(0deg,rgba(30,60,80,.55) 0 1.5px,transparent 1.5px 4px)"></span>'+esc(built.wellCaption[1]||'Pré-filtro ranhurado')+'</div>';
+      }
+      if(extra.length) html += '<div style="margin-top:4px;">'+extra.join(' · ')+'</div>';
     }
-    if(extra.length) html += '<div style="margin-top:4px;">'+extra.join(' · ')+'</div>';
+    if(built.temAmostraUmida){
+      html += '<div style="margin-top:4px;">* amostra úmida</div>';
+    }
     return html;
   }
 
@@ -585,6 +592,9 @@
     }
     if(built.na!=null){
       legendItems.push({ swatch:'<svg width="16" height="16" viewBox="0 0 16 16"><path d="M2,5 L2,11 L7,8 Z" fill="#1E5646"/><line x1="2" y1="8" x2="16" y2="8" stroke="#1E5646" stroke-width="1.2" stroke-dasharray="2 1.5"/></svg>', label:"Nível d'água (N.A.)" });
+    }
+    if(built.temAmostraUmida){
+      legendItems.push({ swatch:'<svg width="16" height="16" viewBox="0 0 16 16"><text x="2" y="12" font-family="var(--font-mono)" font-size="12" font-weight="700" fill="#222">*</text></svg>', label:'amostra úmida' });
     }
     var legendRows = legendItems.map(function(it){
       return '<div class="ps-legend-row">'+it.swatch+'<span>'+esc(it.label)+'</span></div>';
