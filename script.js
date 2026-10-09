@@ -2730,10 +2730,31 @@
     $('#auth-tab-login').classList.toggle('is-active', mode==='login');
     $('#auth-tab-signup').classList.toggle('is-active', mode==='signup');
     $('#auth-name-field').hidden = mode!=='signup';
+    if($('#auth-tipo-field')) $('#auth-tipo-field').hidden = mode!=='signup';
+    atualizarTipoConta();
     $('#auth-submit').textContent = mode==='login' ? 'Entrar' : 'Criar conta';
     $('#auth-error').hidden = true;
     $('#auth-error').classList.remove('is-info');
   }
+  // Tipo de conta no cadastro: Administrador cria a empresa dele e já entra;
+  // Técnico fica aguardando o administrador adicionar pela tela Equipe do WebGeo.
+  function tipoConta(){
+    var r = document.querySelector('input[name="auth-tipo"]:checked');
+    return r ? r.value : 'tecnico';
+  }
+  function atualizarTipoConta(){
+    // se o index.html publicado ainda for o antigo (sem estes campos), não faz nada: a tela não pode travar
+    if(!$('#auth-empresa-field') || !$('#auth-tipo-dica')) return;
+    var adm = authMode==='signup' && tipoConta()==='admin';
+    $('#auth-empresa-field').hidden = !adm;
+    $('#auth-empresa').required = adm;
+    $('#auth-tipo-dica').textContent = tipoConta()==='admin'
+      ? 'Cria a sua empresa e você entra como administrador. Depois você adiciona a equipe pela tela Equipe do WebGeo.'
+      : 'Você entra numa empresa que já usa o sistema. O administrador dela libera o seu acesso pela tela Equipe do WebGeo.';
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('input[name="auth-tipo"]'), function(r){
+    r.addEventListener('change', atualizarTipoConta);
+  });
   $('#auth-tab-login').addEventListener('click', function(){ setAuthMode('login'); });
   $('#auth-tab-signup').addEventListener('click', function(){ setAuthMode('signup'); });
 
@@ -2746,7 +2767,11 @@
     $('#auth-submit').disabled = true;
     var action = authMode==='login'
       ? sb.auth.signInWithPassword({ email: email, password: password })
-      : sb.auth.signUp({ email: email, password: password, options: { data: { full_name: fullName } } });
+      : sb.auth.signUp({ email: email, password: password, options: { data: {
+          full_name: fullName,
+          tipo_conta: tipoConta(),
+          empresa: (tipoConta()==='admin' && $('#auth-empresa')) ? $('#auth-empresa').value.trim() : ''
+        } } });
     action.then(function(res){
       if(res.error) throw res.error;
       if(authMode==='signup' && res.data && !res.data.session){

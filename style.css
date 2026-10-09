@@ -265,7 +265,7 @@
   .field{display:flex;flex-direction:column;gap:5px;min-width:0;}
   .field.wide{grid-column:span 2;}
   .field label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.045em;color:var(--ink-soft);}
-  .field input[type=text],.field input[type=date],.field input[type=time],.field textarea{
+  .field input[type=text],.field input[type=email],.field input[type=password],.field input[type=date],.field input[type=time],.field textarea{
     border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);
     border-radius:var(--radius-s);padding:8px 9px;font-size:13.5px;font-family:var(--font-mono);
     width:100%;
@@ -666,3 +666,16 @@
   .rail-user-email{font-size:10.5px;color:var(--ink-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .rail-user-logout{flex:none;font-size:11px;font-weight:600;color:var(--ink-soft);background:transparent;border:none;padding:4px 6px;border-radius:4px;}
   .rail-user-logout:hover{background:var(--danger-tint);color:var(--danger);}
+
+  /* ============ CADASTRO: TIPO DE CONTA ============ */
+  .auth-tipo-rotulo{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.045em;color:var(--ink-soft);}
+  .auth-tipo{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+  .auth-tipo label{position:relative;cursor:pointer;}
+  .auth-tipo input{position:absolute;opacity:0;pointer-events:none;}
+  .auth-tipo span{
+    display:block;text-align:center;padding:9px 8px;border:1px solid var(--line);border-radius:8px;
+    font-size:13px;font-weight:600;color:var(--ink-soft);background:var(--surface);
+  }
+  .auth-tipo input:checked + span{border-color:var(--accent);background:var(--accent-tint);color:var(--accent-ink);}
+  .auth-tipo input:focus-visible + span{outline:2px solid var(--accent);outline-offset:1px;}
+  .auth-tipo-dica{margin:2px 0 0;font-size:12px;line-height:1.4;color:var(--ink-faint);}
