@@ -109,6 +109,34 @@ e-mail (confirmação de conta, troca de senha).
 
 ---
 
+## Papéis, equipe, conferência da importação e relatório (09/10/2026)
+
+**Antes de usar:** rode `banco/05_papeis_e_equipe.sql` no SQL Editor do Supabase. Ele não apaga dados. Em toda empresa sem administrador, a conta mais antiga vira administradora.
+
+- **Papéis:** *Administrador* faz tudo; *Técnico* vê os dados, importa planilhas, insere planta e traça seções, mas não exclui projeto nem campanha e não vê a tela Equipe. O papel aparece embaixo do e-mail, no menu.
+- **Equipe** (menu, só administrador): adicione uma pessoa pelo e-mail, mude o papel ou remova da empresa. A pessoa precisa ter criado a conta antes, na tela de entrada do Perfil de Sondagem. A empresa sempre fica com pelo menos um administrador.
+- **Segurança:** o script também fecha uma brecha antiga: antes, uma pessoa logada conseguia mudar a própria empresa e o próprio papel direto no banco.
+- **Excluir campanha** (administrador): botão ao lado de "Campanha", no menu. Apaga os resultados e as medições daquela campanha; poços e outras campanhas ficam.
+- **Conferência da importação:** depois de ler a planilha, o sistema compara com as campanhas anteriores do projeto e lista o que merece olhar: valor 100 vezes o valor orientador (possível erro de unidade), valor 10 vezes maior que o histórico do poço, primeira vez acima do VI, queda brusca para abaixo do LQ, N.A. que mudou mais de 2 m, N.A. negativo ou mais fundo que o poço, cota que mudou mais de 0,5 m e poço que mudou mais de 10 m de lugar. Com alertas, só grava depois de marcar "Conferi esses pontos".
+- **Relatório (PDF):** botão no topo. Escolha as partes (resumo e mapa, seção, pluma e evolução, tabela de resultados com o VI de cada parâmetro, notas) e clique em *Gerar PDF*. Na janela de impressão, em "Destino", escolha *Salvar como PDF*. Desmarque "Cabeçalhos e rodapés" para não sair o endereço nas margens. O relatório sai sempre em fundo branco.
+
+---
+
+## Seção geológica
+
+No menu, em **Seção geológica**, clique em **Traçar seção A–A'** e marque no mapa o início e o fim da linha (o clique gruda no poço mais próximo). Pode marcar pontos no meio para a linha fazer curva. Clique em **Concluir** (ou dê dois cliques rápidos no último ponto). Não precisa de nada novo no banco.
+
+- **Quem entra:** poços e sondagens a até a distância da **Faixa** (5 a 40 m) para cada lado da linha. Eles ganham um anel amarelo no mapa.
+- **Litologia:** vem da ficha do Perfil de Sondagem com o mesmo "Poço nº" (ou da aba *Litologia* da planilha). Poço sem litologia aparece só com o nome e o nível d'água.
+- **Altura:** usa a **Cota topo (m)** do poço. Sem cota, usa a do poço mais próximo e marca o nome com `*`.
+- **Nível d'água:** o N.A. da campanha selecionada (ou o da ficha), com uma linha por rede (PM, PMN).
+- **Preencher entre as sondagens:** fecha todo o espaço entre sondagens vizinhas. Camadas parecidas (mesmo material, em alturas próximas) são ligadas com curvas suaves; a que não tem par afina até acabar no caminho; a que fica abaixo do fim de uma sondagem mais rasa passa por baixo dela. É uma interpretação automática e precisa de conferência; dá para desligar.
+- **Exagero vertical:** automático, ou de 1x a 20x.
+- **Baixar imagem (SVG):** salva o desenho em fundo branco.
+- A linha fica guardada no navegador de quem traçou, por projeto.
+
+---
+
 ## Planta em DXF
 
 No menu, em **Planta (DXF)**, clique em **Inserir planta (DXF)** e escolha o arquivo. A planta fica salva no projeto, para todos da empresa.
@@ -119,6 +147,19 @@ No menu, em **Planta (DXF)**, clique em **Inserir planta (DXF)** e escolha o arq
 - **Camadas e cor:** dá para ligar/desligar cada camada e escolher a cor das linhas (preferência de cada usuário).
 - **Fora de posição?** Use **Ajustar posição**: clique num canto da planta e depois onde ele fica no satélite. Com 1 ponto a planta é deslocada; com 2 pontos, deslocada e girada. A escala do desenho é mantida.
 - **Arquivos deste projeto:** `Geoportal\Base.dxf` está em UTM correto (os poços do desenho batem com os reais com 2 a 4 m de diferença). `DWG\base.dxf` está com os eixos trocados e precisa do ajuste por pontos.
+
+---
+
+## Mapa potenciométrico
+
+No menu, marque **Mapa potenciométrico**. Ele usa a campanha selecionada e não precisa de nada novo no banco.
+
+- **De onde vem:** carga = **Cota topo (m)** da aba *Pocos* menos **N.A. (m)** da aba *Campo*. Poço sem cota ou sem coordenada fica de fora.
+- **Poços:** escolha uma rede por vez (PM = rasa; PMN = multinível). Misturar níveis distorce o mapa.
+- **Curvas a cada:** intervalo entre equipotenciais; no automático o sistema escolhe.
+- **Superfície:** "Passa pelos poços" respeita cada medida. As suavizações amortecem poços destoantes e o menu mostra quanto a superfície se afastou do medido.
+- **Setas de fluxo:** apontam do maior para o menor potencial.
+- **Com o potenciométrico ligado**, a carga de cada poço aparece ao lado do nome no mapa.
 
 ---
 
