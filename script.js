@@ -452,9 +452,10 @@
     // esquerda dos números da grade de profundidade, já que são leituras pontuais de
     // campo ligadas a uma profundidade específica, e não uma propriedade da coluna
     var vocMarks = getVocRows().map(function(r){
-      return { prof: parseNum(r.prof), vocppm: (r.vocppm||'').trim() };
+      return { prof: parseNum(r.prof), vocppm: (r.vocppm||'').trim(), amostra: r.amostraUmida==='sim' };
     }).filter(function(r){ return r.prof!=null && r.prof>=0 && r.prof<=realBottom+1e-6 && r.vocppm!==''; })
       .sort(function(a,b){ return a.prof-b.prof; });
+    var temAmostraUmida = vocMarks.some(function(r){ return r.amostra; });
     if(vocMarks.length){
       body.push('<text x="4" y="'+(titleText?24:14)+'" font-family="var(--font-mono)" font-size="8" fill="var(--warn)">VOC (ppm)</text>');
       var vocCursorY = marginTop;
@@ -466,7 +467,14 @@
         if(Math.abs(ly-y) > 1.5){
           body.push('<path d="M26,'+ly+' L'+(colX-10)+','+y+'" fill="none" stroke="var(--warn)" stroke-width=".5"/>');
         }
+        // o "*" fica numa marca própria, à direita do valor (não colada nele) — quando
+        // era um tspan dentro do mesmo <text> ancorado em "end", o texto todo (valor +
+        // asterisco) crescia pra esquerda e o primeiro dígito do valor saía cortado da
+        // viewBox (ex.: "0,50" virava "),50" na tela, ilegível).
         body.push('<text x="26" y="'+(ly+2.8)+'" font-family="var(--font-mono)" font-size="8" text-anchor="end" fill="var(--warn)">'+esc(r.vocppm)+'</text>');
+        if(r.amostra){
+          body.push('<text x="30" y="'+(ly+2.8)+'" font-family="var(--font-mono)" font-size="8" font-weight="700" fill="var(--ink)">*</text>');
+        }
       });
     }
 
@@ -504,7 +512,7 @@
         body.join('')+
       '</svg>';
 
-    return { rows:rows, hasPoco:hasPoco, tuboLiso:tuboLiso, tuboFiltro:tuboFiltro, wellCaption:wellCaption, na:na, svgMarkup: rows.length ? svg : '' };
+    return { rows:rows, hasPoco:hasPoco, tuboLiso:tuboLiso, tuboFiltro:tuboFiltro, wellCaption:wellCaption, na:na, temAmostraUmida:temAmostraUmida, svgMarkup: rows.length ? svg : '' };
   }
 
   function redrawLith(printMode){
@@ -515,7 +523,7 @@
     // legenda: trechos da construção do poço + demais campos do perfil construtivo,
     // mostrados como texto para que todo campo apareça mesmo quando não é desenhado em escala.
     var legend = $('#lith-legend');
-    if(!built.hasPoco){ legend.innerHTML=''; }
+    if(!built.hasPoco && !built.temAmostraUmida){ legend.innerHTML=''; }
     else{
       legend.innerHTML = wellLegendHtml(built);
     }
@@ -523,6 +531,9 @@
 
   // Pequena legenda em HTML para a pista de construção do poço (usada na tela e
   // reaproveitada, de forma expandida, pela legenda do "carimbo" da folha única).
+  // Também reaproveitada para explicar o "*" ao lado das leituras de VOC com
+  // amostra úmida, já que esse texto saiu de dentro do SVG (poluía o desenho,
+  // ficava pequeno demais pra ler) e passou a morar aqui, junto das outras legendas.
   function wellLegendHtml(built){
     var seloConcreto=$('#f-seloConcreto').value, seloBCima=$('#f-seloBentonitaCima').value,
         seloBBaixo=$('#f-seloBentonitaBaixo').value, preFiltroEsp=$('#f-preFiltro').value;
@@ -531,12 +542,18 @@
     if(seloBCima) extra.push('Selo de bentonita (cima): '+esc(seloBCima)+' m');
     if(preFiltroEsp) extra.push('Espessura do pré-filtro: '+esc(preFiltroEsp)+' m');
     if(seloBBaixo) extra.push('Selo de bentonita (baixo): '+esc(seloBBaixo)+' m');
-    var html = '<div class="lg-title">Poço de monitoramento</div>';
-    html += '<div class="lg-row"><span class="lg-swatch" style="background:#8FC1DE"></span>'+esc(built.wellCaption[0]||'Tubo liso')+'</div>';
-    if(built.wellCaption[1]!=null || built.tuboFiltro>0){
-      html += '<div class="lg-row"><span class="lg-swatch" style="background:#8FC1DE;background-image:repeating-linear-gradient(0deg,rgba(30,60,80,.55) 0 1.5px,transparent 1.5px 4px)"></span>'+esc(built.wellCaption[1]||'Pré-filtro ranhurado')+'</div>';
+    var html = '';
+    if(built.hasPoco){
+      html += '<div class="lg-title">Poço de monitoramento</div>';
+      html += '<div class="lg-row"><span class="lg-swatch" style="background:#8FC1DE"></span>'+esc(built.wellCaption[0]||'Tubo liso')+'</div>';
+      if(built.wellCaption[1]!=null || built.tuboFiltro>0){
+        html += '<div class="lg-row"><span class="lg-swatch" style="background:#8FC1DE;background-image:repeating-linear-gradient(0deg,rgba(30,60,80,.55) 0 1.5px,transparent 1.5px 4px)"></span>'+esc(built.wellCaption[1]||'Pré-filtro ranhurado')+'</div>';
+      }
+      if(extra.length) html += '<div style="margin-top:4px;">'+extra.join(' · ')+'</div>';
     }
-    if(extra.length) html += '<div style="margin-top:4px;">'+extra.join(' · ')+'</div>';
+    if(built.temAmostraUmida){
+      html += '<div style="margin-top:4px;">* amostra úmida</div>';
+    }
     return html;
   }
 
@@ -581,6 +598,9 @@
     }
     if(built.na!=null){
       legendItems.push({ swatch:'<svg width="16" height="16" viewBox="0 0 16 16"><path d="M2,5 L2,11 L7,8 Z" fill="#1E5646"/><line x1="2" y1="8" x2="16" y2="8" stroke="#1E5646" stroke-width="1.2" stroke-dasharray="2 1.5"/></svg>', label:"Nível d'água (N.A.)" });
+    }
+    if(built.temAmostraUmida){
+      legendItems.push({ swatch:'<svg width="16" height="16" viewBox="0 0 16 16"><text x="2" y="12" font-family="var(--font-mono)" font-size="12" font-weight="700" fill="#222">*</text></svg>', label:'amostra úmida' });
     }
     var legendRows = legendItems.map(function(it){
       return '<div class="ps-legend-row">'+it.swatch+'<span>'+esc(it.label)+'</span></div>';
@@ -1295,22 +1315,29 @@
   function setActiveRailItem(id){
     $all('.rail-item').forEach(function(el){ el.classList.toggle('is-active', el.dataset.id===id); });
   }
-  // Filtra a lista pelo projeto escolhido no seletor da barra lateral (ou
-  // mostra todas, quando "Todos os projetos" está selecionado). Sondagens
-  // salvas antes desse recurso existir, sem projeto nenhum, continuam
-  // aparecendo normalmente em "Todos os projetos" — nada muda pra elas.
+  // Filtra a lista pelo projeto escolhido no seletor da barra lateral. Em
+  // "Todos os projetos" NÃO mostra as sondagens de todos os projetos juntas
+  // (ficava uma lista enorme e confusa) — só as sondagens avulsas, sem
+  // projeto nenhum (ex.: as salvas antes desse recurso existir). Pra ver as
+  // sondagens de um projeto específico, é preciso selecioná-lo no seletor.
   function docsFiltradosPorProjeto(){
     var filtro = window.__projetoSelecionadoId || null;
-    if(!filtro) return sessionDocs;
+    if(!filtro) return sessionDocs.filter(function(d){ return !(d.data.projetoId); });
     return sessionDocs.filter(function(d){ return (d.data.projetoId||null) === filtro; });
   }
   function renderSessionList(){
     var list = $('#rail-list');
     var docs = docsFiltradosPorProjeto();
     if(!docs.length){
-      list.innerHTML = window.__projetoSelecionadoId
-        ? '<div class="rail-empty">Nenhuma sondagem salva neste projeto ainda.</div>'
-        : '<div class="rail-empty">Nenhuma sondagem salva ainda. Preencha a ficha e clique em "Salvar".</div>';
+      var msg;
+      if(window.__projetoSelecionadoId){
+        msg = 'Nenhuma sondagem salva neste projeto ainda.';
+      } else if(sessionDocs.length){
+        msg = 'Selecione um projeto acima para ver as sondagens dele.';
+      } else {
+        msg = 'Nenhuma sondagem salva ainda. Preencha a ficha e clique em "Salvar".';
+      }
+      list.innerHTML = '<div class="rail-empty">'+msg+'</div>';
       atualizarEstatisticas();
       atualizarResumoProjeto();
       return;
@@ -1848,42 +1875,493 @@
   }
   function fecharMapaProjeto(){ $('#mapa-projeto-modal').hidden = true; }
 
-  /* ---------- relatório consolidado do projeto (.csv) ----------
+  /* ---------- relatório consolidado do projeto (.xlsx) ----------
      Uma linha por sondagem do projeto selecionado, com os dados que mais
      interessam num relatório resumido (obra, status, profundidade,
-     coordenadas, endereço) — pra abrir direto no Excel/Google Sheets e
-     mandar pro cliente, sem precisar abrir cada ficha uma por uma. */
-  function exportarResumoProjetoCsv(){
+     coordenadas, endereço) — pra abrir direto no Excel e mandar pro
+     cliente, sem precisar abrir cada ficha uma por uma.
+
+     Era um .csv (texto puro), mas o Rafael pediu que saísse já bonito —
+     cabeçalho colorido, filtro automático, colunas no tamanho certo — e
+     isso um .csv não tem como guardar. Agora monta um .xlsx de verdade com
+     a biblioteca ExcelJS. Ela é um arquivo grande (~1 MB), então só é
+     carregada na hora em que o botão é clicado (carregarExcelJS), não no
+     carregamento do app — não pesa pro técnico que só está preenchendo
+     fichas no celular. */
+  var _exceljsCarregando = null;
+  function carregarExcelJS(){
+    if(window.ExcelJS) return Promise.resolve();
+    if(_exceljsCarregando) return _exceljsCarregando;
+    _exceljsCarregando = new Promise(function(resolve, reject){
+      var s = document.createElement('script');
+      s.src = 'exceljs.min.js';
+      s.onload = function(){ resolve(); };
+      s.onerror = function(){ _exceljsCarregando = null; reject(new Error('Falha ao carregar exceljs.min.js')); };
+      document.head.appendChild(s);
+    });
+    return _exceljsCarregando;
+  }
+  // Mesmas cores do seletor de status dentro da ficha (.st-rascunho/
+  // concluida/revisada no style.css) — pra quem abre o relatório reconhecer
+  // o status de cada sondagem pela cor, igual já reconhece dentro do app.
+  function corStatusExcel(v){
+    if(v==='concluida') return 'FFDCE8FB';
+    if(v==='revisada') return 'FFDCEAE4';
+    return 'FFE1E7E3'; // rascunho
+  }
+  function exportarResumoProjetoXlsx(){
     var filtro = window.__projetoSelecionadoId;
     if(!filtro){ toast('Selecione um projeto para exportar o relatório.'); return; }
     var docs = docsFiltradosPorProjeto();
     if(!docs.length){ toast('Nenhuma sondagem salva neste projeto ainda.'); return; }
     var nomeProjeto = nomeDoProjeto(filtro) || 'projeto';
-    var linhas = [['Sondagem','Poço','Obra','Status','Data início','Data término','Profundidade total (m)','Coordenada E','Coordenada N','Zona UTM','Endereço']];
-    docs.forEach(function(d){
-      var m = d.data.meta||{}, perfil = d.data.perfil||{}, local = d.data.local||{};
-      linhas.push([
-        m.sondagemNo||'', m.pocoNo||'', m.obra||'', statusInfo(d.data.status).texto,
-        fmtDateBR(m.dataInicio)||'', fmtDateBR(m.dataTermino)||'',
-        perfil.profTotalSondagem||'', local.utmE||'', local.utmN||'', local.utmZona||'', local.endereco||''
-      ]);
+
+    toast('Gerando relatório...');
+    carregarExcelJS().then(function(){
+      var wb = new ExcelJS.Workbook();
+      wb.creator = 'Perfil de Sondagem';
+      wb.created = new Date();
+      var ws = wb.addWorksheet('Relatório', { views:[{ state:'frozen', ySplit:1 }] });
+
+      var colunas = [
+        { header:'Sondagem', key:'sondagem', width:14 },
+        { header:'Poço', key:'poco', width:12 },
+        { header:'Obra', key:'obra', width:30 },
+        { header:'Status', key:'status', width:14 },
+        { header:'Data início', key:'dataInicio', width:13 },
+        { header:'Data término', key:'dataTermino', width:14 },
+        { header:'Profundidade total (m)', key:'profundidade', width:16 },
+        { header:'Coordenada E', key:'e', width:14 },
+        { header:'Coordenada N', key:'n', width:14 },
+        { header:'Zona UTM', key:'zona', width:10 },
+        { header:'Endereço', key:'endereco', width:38 }
+      ];
+      ws.columns = colunas;
+
+      docs.forEach(function(d){
+        var m = d.data.meta||{}, perfil = d.data.perfil||{}, local = d.data.local||{};
+        ws.addRow({
+          sondagem: m.sondagemNo||'',
+          poco: m.pocoNo||'',
+          obra: m.obra||'',
+          status: statusInfo(d.data.status).texto,
+          dataInicio: m.dataInicio ? new Date(m.dataInicio+'T00:00:00') : null,
+          dataTermino: m.dataTermino ? new Date(m.dataTermino+'T00:00:00') : null,
+          profundidade: parseNum(perfil.profTotalSondagem),
+          e: parseNum(local.utmE),
+          n: parseNum(local.utmN),
+          zona: local.utmZona||'',
+          endereco: local.endereco||''
+        });
+      });
+
+      // cabeçalho: verde da marca, negrito, texto branco, quebra de linha
+      var header = ws.getRow(1);
+      header.height = 32;
+      header.eachCell(function(cell){
+        cell.font = { bold:true, color:{ argb:'FFFFFFFF' }, size:11 };
+        cell.fill = { type:'pattern', pattern:'solid', fgColor:{ argb:'FF2F6F5E' } };
+        cell.alignment = { vertical:'middle', horizontal:'center', wrapText:true };
+      });
+
+      var idx = {};
+      colunas.forEach(function(c,i){ idx[c.key] = i+1; });
+
+      for(var r=2; r<=ws.rowCount; r++){
+        var row = ws.getRow(r);
+        var statusValor = docs[r-2].data.status || 'rascunho';
+        // listra leve nas linhas pares, pra facilitar a leitura de uma lista
+        // comprida, e pinta a célula de status com a cor do status.
+        row.eachCell({ includeEmpty:true }, function(cell){
+          cell.border = { bottom:{ style:'thin', color:{ argb:'FFE3E8E5' } } };
+          if(r % 2 === 0) cell.fill = { type:'pattern', pattern:'solid', fgColor:{ argb:'FFF5F7F6' } };
+        });
+        row.getCell(idx.status).fill = { type:'pattern', pattern:'solid', fgColor:{ argb: corStatusExcel(statusValor) } };
+        row.getCell(idx.status).alignment = { horizontal:'center' };
+        row.getCell(idx.dataInicio).numFmt = 'dd/mm/yyyy';
+        row.getCell(idx.dataTermino).numFmt = 'dd/mm/yyyy';
+        row.getCell(idx.profundidade).numFmt = '0.00';
+        row.getCell(idx.e).numFmt = '#,##0.00';
+        row.getCell(idx.n).numFmt = '#,##0.00';
+      }
+
+      ws.autoFilter = { from:{ row:1, column:1 }, to:{ row:1, column:colunas.length } };
+
+      return wb.xlsx.writeBuffer();
+    }).then(function(buffer){
+      var blob = new Blob([buffer], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      var url = URL.createObjectURL(blob);
+      var filename = 'relatorio-'+slugify(nomeProjeto)+'-'+new Date().toISOString().slice(0,10)+'.xlsx';
+      var a = document.createElement('a');
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+      toast('Relatório exportado: '+filename);
+    }).catch(function(err){
+      console.error(err);
+      toast('Não foi possível gerar o relatório. Tente de novo.');
     });
-    var csv = linhas.map(function(row){
-      return row.map(function(cell){
-        var s = String(cell==null?'':cell);
-        return /[;"\n]/.test(s) ? ('"'+s.replace(/"/g,'""')+'"') : s;
-      }).join(';');
-    }).join('\r\n');
-    // ';' como separador e um BOM no início — é o que o Excel em português
-    // espera pra abrir um .csv com acento certo sem precisar importar manual.
-    var blob = new Blob(['﻿'+csv], { type:'text/csv;charset=utf-8' });
-    var url = URL.createObjectURL(blob);
-    var filename = 'relatorio-'+slugify(nomeProjeto)+'-'+new Date().toISOString().slice(0,10)+'.csv';
-    var a = document.createElement('a');
-    a.href = url; a.download = filename;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
-    toast('Relatório exportado: '+filename);
+  }
+
+  /* ---------- "Perfis" do projeto — planilha técnica (.xlsx) ----------
+     O Rafael mandou o modelo que a empresa já usa pra entregar pro
+     cliente (Furo de Sondagem / Poço / Descrição litológica / NA / tubo
+     filtro etc., separado em abas PM, PMN e ST conforme o tipo de poço) e
+     pediu pra ficar igual. Essa função monta essa planilha — igual no
+     visual (cores, fonte, bordas, congelamento das 2 primeiras colunas) e
+     na estrutura (uma aba por tipo de poço), com os dados que a ficha já
+     tem: furo e poço (Identificação), a tabela de litologia inteira
+     (vira o texto "0,00 - 0,15 - ..." de cada camada, uma por linha) e os
+     campos de Perfil construtivo (NA, tubo filtro etc.).
+     Duas colunas do modelo original ("Cota da amostra enviada pra análise
+     química" e "Coluna d'água") não têm campo correspondente na ficha
+     hoje — ficam em branco, do jeito que já ficam em branco na maioria
+     das linhas do modelo original do Rafael também. As datas de
+     "instalação do poço" usam a mesma Data de início/término da
+     sondagem (a ficha não tem um campo separado só pra isso). */
+  function descricaoLitologica(data){
+    return (data.litologia||[])
+      .filter(function(r){ return r.inicio || r.termino || r.litologia; })
+      .map(function(r){ return (r.inicio||'')+' - '+(r.termino||'')+' - '+(r.litologia||''); })
+      .join('\n');
+  }
+  // Mesma lógica do modelo: poço "PMN-..." vai pra aba PMN, qualquer outro
+  // poço preenchido vai pra PM, e sondagem sem poço instalado (só o furo,
+  // tipo um trado/teste) vai pra ST.
+  function abaDoPoco(pocoNo){
+    var p = String(pocoNo||'').trim().toUpperCase();
+    if(!p) return 'ST';
+    if(p.indexOf('PMN') === 0) return 'PMN';
+    return 'PM';
+  }
+  function exportarPerfisProjetoXlsx(){
+    var filtro = window.__projetoSelecionadoId;
+    if(!filtro){ toast('Selecione um projeto para exportar os perfis.'); return; }
+    var docs = docsFiltradosPorProjeto();
+    if(!docs.length){ toast('Nenhuma sondagem salva neste projeto ainda.'); return; }
+    var nomeProjeto = nomeDoProjeto(filtro) || 'projeto';
+
+    var grupos = { PM:[], PMN:[], ST:[] };
+    docs.forEach(function(d){ grupos[abaDoPoco((d.data.meta||{}).pocoNo)].push(d); });
+
+    toast('Gerando planilha de perfis...');
+    carregarExcelJS().then(function(){
+      var wb = new ExcelJS.Workbook();
+      wb.creator = 'Perfil de Sondagem';
+      wb.created = new Date();
+
+      var colunas = [
+        { header:'Furo de\nSondagem', key:'furo', width:10 },
+        { header:'Poço de monitoramento instalado', key:'poco', width:17 },
+        { header:'Descrição litológica', key:'litologia', width:55 },
+        { header:'Profundidade da sondagem\n(m)', key:'profSondagem', width:13 },
+        { header:'Comprimento total do poço\n(m)', key:'profPoco', width:12 },
+        { header:'NA sondagem\n(m)', key:'naSondagem', width:10 },
+        { header:'NA estabilizado\n(m)', key:'naEstabilizado', width:11 },
+        { header:'Comprimento do tubo filtro\n(m)', key:'tuboFiltro', width:12 },
+        { header:'Comprimento do tubo liso\n(m)', key:'tuboLiso', width:11 },
+        { header:'Cota da amostra de solo enviada para análise química\n(m)', key:'cotaAmostra', width:14 },
+        { header:'Data de instalação\n(Início)', key:'dataInstIni', width:11 },
+        { header:'Data de instalação\n(Término)', key:'dataInstFim', width:13 },
+        { header:"Coluna d'água", key:'colunaAgua', width:12 }
+      ];
+      var colProfPoco = 5, colTuboFiltro = 8, colTuboLiso = 9; // pra fórmula de fallback =E-H, ver abaixo
+
+      ['PM','PMN','ST'].forEach(function(sigla){
+        var lista = grupos[sigla];
+        if(!lista.length) return;
+        var ws = wb.addWorksheet(sigla, { views:[{ state:'frozen', xSplit:2, ySplit:1 }] });
+        ws.columns = colunas;
+
+        lista.forEach(function(d){
+          var m = d.data.meta||{}, perfil = d.data.perfil||{};
+          ws.addRow({
+            furo: m.sondagemNo||'',
+            poco: m.pocoNo||'',
+            litologia: descricaoLitologica(d.data),
+            profSondagem: parseNum(perfil.profTotalSondagem),
+            profPoco: parseNum(perfil.profTotalPoco),
+            naSondagem: parseNum(perfil.naSondagem),
+            naEstabilizado: parseNum(perfil.naEstabilizado),
+            tuboFiltro: parseNum(perfil.tuboFiltro),
+            // Comprimento do tubo liso: usa o valor que o técnico preencheu na
+            // ficha (Perfil construtivo); só quando essa sondagem não tem
+            // esse campo preenchido é que a célula vira uma fórmula
+            // =Comprimento total do poço − Comprimento do tubo filtro (ver
+            // o preenchimento de fallback logo abaixo).
+            tuboLiso: parseNum(perfil.tuboLiso),
+            dataInstIni: m.dataInicio ? new Date(m.dataInicio+'T00:00:00') : null,
+            dataInstFim: m.dataTermino ? new Date(m.dataTermino+'T00:00:00') : null
+          });
+        });
+
+        // cabeçalho: cinza claro (igual ao modelo), Arial 9 negrito, com
+        // destaque nas 3 colunas que o modelo também destaca (fundo
+        // amarelo-claro no comprimento do poço, fonte verde no NA
+        // estabilizado, fonte azul no tubo filtro).
+        var header = ws.getRow(1);
+        header.height = 48;
+        header.eachCell({ includeEmpty:true }, function(cell){
+          cell.font = { name:'Arial', size:9, bold:true };
+          cell.fill = { type:'pattern', pattern:'solid', fgColor:{ argb:'FFE3E3E3' } };
+          cell.alignment = { vertical:'middle', horizontal:'center', wrapText:true };
+          cell.border = { top:{style:'thin'}, bottom:{style:'thin'}, left:{style:'thin'}, right:{style:'thin'} };
+        });
+        header.getCell(colProfPoco).fill = { type:'pattern', pattern:'solid', fgColor:{ argb:'FFFFF2CC' } };
+        header.getCell(7).font = { name:'Arial', size:9, bold:true, color:{ argb:'FF00B050' } };
+        header.getCell(colTuboFiltro).font = { name:'Arial', size:9, bold:true, color:{ argb:'FF0070C0' } };
+
+        for(var r=2; r<=ws.rowCount; r++){
+          var row = ws.getRow(r);
+          var profPoco = row.getCell(colProfPoco).value, tubo = row.getCell(colTuboFiltro).value;
+          // Só calcula o tubo liso por fórmula quando a ficha não tinha esse
+          // campo preenchido — quando tinha, o valor real já está na célula
+          // (preenchido pelo addRow acima) e fica intocado.
+          if(row.getCell(colTuboLiso).value == null){
+            row.getCell(colTuboLiso).value = {
+              formula: 'E'+r+'-H'+r,
+              result: (typeof profPoco==='number' && typeof tubo==='number') ? (profPoco-tubo) : undefined
+            };
+          }
+          var numLinhas = String(row.getCell(3).value||'').split('\n').length;
+          row.height = Math.max(24, 13*numLinhas + 10);
+          row.eachCell({ includeEmpty:true }, function(cell, colNumber){
+            cell.font = { name:'Arial', size:9 };
+            cell.border = { top:{style:'thin'}, bottom:{style:'thin'}, left:{style:'thin'}, right:{style:'thin'} };
+            cell.alignment = { vertical:'center', horizontal: colNumber===3 ? 'left':'center', wrapText: colNumber===3 };
+            if(r % 2 === 0) cell.fill = { type:'pattern', pattern:'solid', fgColor:{ argb:'FFDAE3F3' } };
+          });
+          row.getCell(1).font = { name:'Arial', size:9, bold:true };
+          row.getCell(2).font = { name:'Arial', size:9, bold:true };
+          [4,5,6,7,8,9].forEach(function(c){ row.getCell(c).numFmt = '0.00'; });
+          row.getCell(11).numFmt = 'dd/mm/yyyy';
+          row.getCell(12).numFmt = 'dd/mm/yyyy';
+        }
+
+        ws.autoFilter = { from:{ row:1, column:1 }, to:{ row:1, column:colunas.length } };
+      });
+
+      return wb.xlsx.writeBuffer();
+    }).then(function(buffer){
+      var blob = new Blob([buffer], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      var url = URL.createObjectURL(blob);
+      var filename = 'perfis-'+slugify(nomeProjeto)+'-'+new Date().toISOString().slice(0,10)+'.xlsx';
+      var a = document.createElement('a');
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+      toast('Planilha exportada: '+filename);
+    }).catch(function(err){
+      console.error(err);
+      toast('Não foi possível gerar a planilha. Tente de novo.');
+    });
+  }
+
+  /* ---------- importar perfis das abas PM/PMN (.xlsx) ----------
+     Caminho inverso do botão "Perfis (.xlsx)": em vez de GERAR a planilha
+     a partir das fichas, LÊ uma planilha pronta (no formato do modelo da
+     empresa) e cria uma ficha nova aqui pra cada linha das abas PM e PMN
+     — pra não precisar redigitar sondagens que já existem num Excel
+     antigo. Usa a mesma biblioteca ExcelJS do botão de gerar (ela também
+     lê .xlsx, não só escreve), carregada só na hora do clique.
+     Acha as colunas pelo TEXTO do cabeçalho (não pela posição) — assim
+     funciona mesmo se a ordem mudar um pouco de uma aba pra outra (o
+     modelo real do Rafael já tem pequenas diferenças entre abas).
+     Cada sondagem importada entra no projeto selecionado no momento (por
+     isso o botão só aparece com um projeto escolhido), com status
+     "Concluída" (são sondagens já executadas) e nome da obra igual ao
+     nome do projeto — a planilha de origem não tem essa coluna, dá pra
+     corrigir depois em cada ficha se for diferente. Se já existir uma
+     sondagem com o mesmo "Furo de Sondagem" neste projeto, a linha é
+     pulada (não duplica) — rodar a importação de novo é seguro. */
+  function valorCelula(v){
+    if(v==null) return '';
+    if(typeof v==='object'){
+      if(v instanceof Date) return v;
+      if(v.richText) return v.richText.map(function(rt){ return rt.text; }).join('');
+      if(v.result!=null) return v.result;
+      if(v.text!=null) return v.text;
+      return '';
+    }
+    return v;
+  }
+  function normalizaCabecalho(s){
+    return stripAccents(String(s||'')).toLowerCase().replace(/\s+/g,' ').trim();
+  }
+  function mapaCabecalhoPerfis(ws){
+    var mapa = {};
+    var row1 = ws.getRow(1);
+    var n = Math.max(ws.columnCount, 14);
+    for(var c=1; c<=n; c++){
+      var txt = normalizaCabecalho(valorCelula(row1.getCell(c).value));
+      if(!txt) continue;
+      if(!mapa.furo && txt.indexOf('furo de sondagem')===0) mapa.furo=c;
+      else if(!mapa.poco && txt.indexOf('poco de monitoramento')===0) mapa.poco=c;
+      else if(!mapa.litologia && txt.indexOf('descricao litologica')===0) mapa.litologia=c;
+      else if(!mapa.profSondagem && txt.indexOf('profundidade da sondagem')===0) mapa.profSondagem=c;
+      else if(!mapa.profPoco && txt.indexOf('comprimento total do poco')===0) mapa.profPoco=c;
+      else if(!mapa.naEstabilizado && txt.indexOf('na estabilizado')===0) mapa.naEstabilizado=c;
+      else if(!mapa.naSondagem && txt.indexOf('na sondagem')===0) mapa.naSondagem=c;
+      else if(!mapa.tuboFiltro && txt.indexOf('comprimento do tubo filtro')===0) mapa.tuboFiltro=c;
+      else if(!mapa.tuboLiso && (txt.indexOf('comprimento do tubo liso')===0 || txt.indexOf('secao filtrante')===0)) mapa.tuboLiso=c;
+      else if(txt.indexOf('data de instalacao')===0 && txt.indexOf('inicio')>=0) mapa.dataInstIni=c;
+      else if(txt.indexOf('data de instalacao')===0 && (txt.indexOf('termino')>=0 || txt.indexOf('fim')>=0)) mapa.dataInstFim=c;
+    }
+    return mapa;
+  }
+  function numeroParaTexto(v){
+    v = valorCelula(v);
+    if(v==null || v==='') return '';
+    if(typeof v==='number'){
+      // arredonda pra 2 casas antes de virar texto — subtração de ponto
+      // flutuante (ex.: 4,16 - 3 = 1.1600000000000001, tanto lendo o
+      // resultado de uma fórmula quanto calculando o tubo liso aqui mesmo)
+      // senão aparece um número com uma dúzia de casas decimais na ficha.
+      var arred = Math.round(v*100)/100;
+      return String(arred).replace('.',',');
+    }
+    return String(v).trim();
+  }
+  function dataParaISO(v){
+    v = valorCelula(v);
+    if(!v) return '';
+    if(v instanceof Date) return v.toISOString().slice(0,10);
+    var m = String(v).trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? m[0] : '';
+  }
+  function litologiaDoTexto(v){
+    var txt = valorCelula(v);
+    var linhas = String(txt||'').split('\n').map(function(l){ return l.trim(); }).filter(Boolean);
+    var linhaRe = /^([\d.,]+)\s*-\s*([\d.,]+)\s*-\s*(.+)$/;
+    var rows = linhas.map(function(l){
+      var m = l.match(linhaRe);
+      return m ? { inicio:m[1].trim(), termino:m[2].trim(), litologia:m[3].trim(), cor:'' } : null;
+    }).filter(Boolean);
+    return rows.length ? rows : [{}];
+  }
+  function linhasDaAba(ws, mapa){
+    if(!mapa.furo) return [];
+    var linhas = [];
+    var vazias = 0;
+    for(var r=2; r<=ws.rowCount && vazias<25; r++){
+      var furo = String(valorCelula(ws.getRow(r).getCell(mapa.furo).value)||'').trim();
+      if(!furo){ vazias++; continue; }
+      vazias = 0;
+      linhas.push(r);
+    }
+    return linhas;
+  }
+  function importarPerfisXlsx(file){
+    if(!file) return;
+    var filtro = window.__projetoSelecionadoId;
+    if(!filtro){ toast('Selecione (ou crie) o projeto onde essas sondagens vão entrar antes de importar.'); return; }
+    var nomeProjeto = nomeDoProjeto(filtro) || 'projeto';
+
+    var reader = new FileReader();
+    reader.onload = function(){
+      carregarExcelJS().then(function(){
+        var wbLido = new ExcelJS.Workbook();
+        return wbLido.xlsx.load(reader.result);
+      }).then(function(wbLido){
+        var existentes = {};
+        docsFiltradosPorProjeto().forEach(function(d){
+          var cod = stripAccents(String((d.data.meta||{}).sondagemNo||'')).toLowerCase().trim();
+          if(cod) existentes[cod] = true;
+        });
+
+        var candidatas = [];
+        ['PM','PMN'].forEach(function(sigla){
+          var ws = wbLido.getWorksheet(sigla);
+          if(!ws) return;
+          var mapa = mapaCabecalhoPerfis(ws);
+          if(!mapa.furo) return; // aba sem o cabeçalho esperado — ignora
+          linhasDaAba(ws, mapa).forEach(function(r){
+            candidatas.push({ ws:ws, mapa:mapa, r:r });
+          });
+        });
+
+        if(!candidatas.length){
+          toast('Não encontrei linhas nas abas PM/PMN desse arquivo. Confira se ele tem essas abas, no formato do modelo.');
+          return;
+        }
+
+        var confirmaMsg = 'Encontrei '+candidatas.length+' sondagem(ns) nas abas PM/PMN de "'+file.name+'".\n'+
+          'Vão entrar no projeto "'+nomeProjeto+'", com a obra "'+nomeProjeto+'" e status "Concluída" (dá pra ajustar depois em cada ficha).\n'+
+          'As que já existirem aqui (mesmo "Furo de Sondagem") são puladas, sem duplicar.\n\nContinuar?';
+        if(!window.confirm(confirmaMsg)) return;
+
+        var importadas = 0, puladas = 0, primeiroId = null;
+        candidatas.forEach(function(item){
+          var ws = item.ws, mapa = item.mapa, r = item.r;
+          var row = ws.getRow(r);
+          var furo = String(valorCelula(row.getCell(mapa.furo).value)||'').trim();
+          var codNorm = stripAccents(furo).toLowerCase().trim();
+          if(existentes[codNorm]){ puladas++; return; }
+          existentes[codNorm] = true;
+
+          var poco = mapa.poco ? String(valorCelula(row.getCell(mapa.poco).value)||'').trim() : '';
+          var dataIni = mapa.dataInstIni ? dataParaISO(row.getCell(mapa.dataInstIni).value) : '';
+          var dataFim = mapa.dataInstFim ? dataParaISO(row.getCell(mapa.dataInstFim).value) : '';
+
+          // Comprimento do tubo liso: vem da coluna própria quando a planilha
+          // tem uma (ver mapaCabecalhoPerfis); quando não tem, calcula pela
+          // mesma conta do modelo (comprimento total do poço − tubo filtro).
+          var profPocoNum = mapa.profPoco ? parseNum(valorCelula(row.getCell(mapa.profPoco).value)) : null;
+          var tuboFiltroNum = mapa.tuboFiltro ? parseNum(valorCelula(row.getCell(mapa.tuboFiltro).value)) : null;
+          var tuboLisoTxt = mapa.tuboLiso
+            ? numeroParaTexto(row.getCell(mapa.tuboLiso).value)
+            : (profPocoNum!=null && tuboFiltroNum!=null ? numeroParaTexto(profPocoNum - tuboFiltroNum) : '');
+
+          var data = {
+            meta: {
+              obra: nomeProjeto, nOS:'', tecnico:'', equipeSondagem:'', tempo:'',
+              sondagemNo: furo, pocoNo: poco, localizacao:'',
+              dataInicio: dataIni, horaInicio:'', dataTermino: dataFim, horaTermino:''
+            },
+            equip: {},
+            litologia: mapa.litologia ? litologiaDoTexto(row.getCell(mapa.litologia).value) : [{}],
+            voc: [],
+            perfil: {
+              profTotalSondagem: mapa.profSondagem ? numeroParaTexto(row.getCell(mapa.profSondagem).value) : '',
+              diametroSondagem:'',
+              naSondagem: mapa.naSondagem ? numeroParaTexto(row.getCell(mapa.naSondagem).value) : '',
+              profTotalPoco: mapa.profPoco ? numeroParaTexto(row.getCell(mapa.profPoco).value) : '',
+              diametroPoco:'',
+              naEstabilizado: mapa.naEstabilizado ? numeroParaTexto(row.getCell(mapa.naEstabilizado).value) : '',
+              tuboFiltro: mapa.tuboFiltro ? numeroParaTexto(row.getCell(mapa.tuboFiltro).value) : '',
+              tuboLiso: tuboLisoTxt
+            },
+            carimbo: {},
+            isExample: false,
+            status: 'concluida',
+            projetoId: filtro
+          };
+
+          var id = uid();
+          if(!primeiroId) primeiroId = id;
+          sessionDocs.push({ id:id, data:data });
+          syncSondagemToCloud(id, data);
+          importadas++;
+        });
+
+        if(primeiroId){
+          currentDocId = primeiroId;
+          renderForm(docComId(primeiroId));
+        }
+        renderSessionList();
+        setActiveRailItem(currentDocId);
+        toast(importadas+' sondagem(ns) importada(s)'+(puladas?' ('+puladas+' já existiam e foram puladas)':'')+'.');
+      }).catch(function(err){
+        console.error(err);
+        toast('Não foi possível ler esse arquivo. Confira se é um .xlsx no formato do modelo.');
+      });
+    };
+    reader.onerror = function(){ toast('Não foi possível ler o arquivo.'); };
+    reader.readAsArrayBuffer(file);
+  }
+  function docComId(id){
+    var found = sessionDocs.filter(function(d){ return d.id===id; })[0];
+    return found ? found.data : blankData();
   }
 
   /* ---------- impressão em lote (todas as sondagens do projeto) ----------
@@ -2168,7 +2646,14 @@
     window.__docProjetoId = $('#tb-projeto').value || null;
   });
   $('#btn-mapa-projeto').addEventListener('click', abrirMapaProjeto);
-  $('#btn-relatorio-projeto').addEventListener('click', exportarResumoProjetoCsv);
+  $('#btn-relatorio-projeto').addEventListener('click', exportarResumoProjetoXlsx);
+  $('#btn-perfis-projeto').addEventListener('click', exportarPerfisProjetoXlsx);
+  $('#btn-importar-perfis').addEventListener('click', function(){ $('#file-importar-perfis').click(); });
+  $('#file-importar-perfis').addEventListener('change', function(e){
+    var file = e.target.files && e.target.files[0];
+    importarPerfisXlsx(file);
+    e.target.value = ''; // permite escolher o mesmo arquivo de novo depois
+  });
   $('#btn-imprimir-projeto').addEventListener('click', imprimirTodasDoProjeto);
   $('#mapa-projeto-fechar').addEventListener('click', fecharMapaProjeto);
   $('#mapa-projeto-modal').addEventListener('click', function(e){
@@ -2245,29 +2730,10 @@
     $('#auth-tab-login').classList.toggle('is-active', mode==='login');
     $('#auth-tab-signup').classList.toggle('is-active', mode==='signup');
     $('#auth-name-field').hidden = mode!=='signup';
-    $('#auth-tipo-field').hidden = mode!=='signup';
-    atualizarTipoConta();
     $('#auth-submit').textContent = mode==='login' ? 'Entrar' : 'Criar conta';
     $('#auth-error').hidden = true;
     $('#auth-error').classList.remove('is-info');
   }
-  // Tipo de conta no cadastro: Administrador cria a empresa dele e já entra;
-  // Técnico fica aguardando o administrador adicionar pela tela Equipe do WebGeo.
-  function tipoConta(){
-    var r = document.querySelector('input[name="auth-tipo"]:checked');
-    return r ? r.value : 'tecnico';
-  }
-  function atualizarTipoConta(){
-    var adm = authMode==='signup' && tipoConta()==='admin';
-    $('#auth-empresa-field').hidden = !adm;
-    $('#auth-empresa').required = adm;
-    $('#auth-tipo-dica').textContent = tipoConta()==='admin'
-      ? 'Cria a sua empresa e você entra como administrador. Depois você adiciona a equipe pela tela Equipe do WebGeo.'
-      : 'Você entra numa empresa que já usa o sistema. O administrador dela libera o seu acesso pela tela Equipe do WebGeo.';
-  }
-  Array.prototype.forEach.call(document.querySelectorAll('input[name="auth-tipo"]'), function(r){
-    r.addEventListener('change', atualizarTipoConta);
-  });
   $('#auth-tab-login').addEventListener('click', function(){ setAuthMode('login'); });
   $('#auth-tab-signup').addEventListener('click', function(){ setAuthMode('signup'); });
 
@@ -2280,11 +2746,7 @@
     $('#auth-submit').disabled = true;
     var action = authMode==='login'
       ? sb.auth.signInWithPassword({ email: email, password: password })
-      : sb.auth.signUp({ email: email, password: password, options: { data: {
-          full_name: fullName,
-          tipo_conta: tipoConta(),
-          empresa: tipoConta()==='admin' ? $('#auth-empresa').value.trim() : ''
-        } } });
+      : sb.auth.signUp({ email: email, password: password, options: { data: { full_name: fullName } } });
     action.then(function(res){
       if(res.error) throw res.error;
       if(authMode==='signup' && res.data && !res.data.session){
