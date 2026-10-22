@@ -2263,15 +2263,10 @@
         var wbLido = new ExcelJS.Workbook();
         return wbLido.xlsx.load(reader.result);
       }).then(function(wbLido){
-        // Checa duplicidade pelo "Furo de Sondagem" em TODOS os projetos, não só
-        // no que está selecionado — antes só comparava dentro do projeto atual,
-        // e um furo já importado (sem querer) em outro projeto passava direto,
-        // criando duplicata sem avisar. Guarda também em qual projeto cada furo
-        // já existe, pra avisar quando a duplicata for de outro projeto.
-        var existentes = {}; // codNorm -> { projetoId }
-        sessionDocs.forEach(function(d){
+        var existentes = {};
+        docsFiltradosPorProjeto().forEach(function(d){
           var cod = stripAccents(String((d.data.meta||{}).sondagemNo||'')).toLowerCase().trim();
-          if(cod) existentes[cod] = { projetoId: d.data.projetoId || null };
+          if(cod) existentes[cod] = true;
         });
 
         var candidatas = [];
@@ -2292,22 +2287,17 @@
 
         var confirmaMsg = 'Encontrei '+candidatas.length+' sondagem(ns) nas abas PM/PMN de "'+file.name+'".\n'+
           'Vão entrar no projeto "'+nomeProjeto+'", com a obra "'+nomeProjeto+'" e status "Concluída" (dá pra ajustar depois em cada ficha).\n'+
-          'As que já existirem (mesmo "Furo de Sondagem", em qualquer projeto) são puladas, sem duplicar.\n\nContinuar?';
+          'As que já existirem aqui (mesmo "Furo de Sondagem") são puladas, sem duplicar.\n\nContinuar?';
         if(!window.confirm(confirmaMsg)) return;
 
-        var importadas = 0, puladas = 0, puladasOutroProjeto = 0, primeiroId = null;
+        var importadas = 0, puladas = 0, primeiroId = null;
         candidatas.forEach(function(item){
           var ws = item.ws, mapa = item.mapa, r = item.r;
           var row = ws.getRow(r);
           var furo = String(valorCelula(row.getCell(mapa.furo).value)||'').trim();
           var codNorm = stripAccents(furo).toLowerCase().trim();
-          var existente = existentes[codNorm];
-          if(existente){
-            puladas++;
-            if(existente.projetoId && existente.projetoId!==filtro) puladasOutroProjeto++;
-            return;
-          }
-          existentes[codNorm] = { projetoId: filtro };
+          if(existentes[codNorm]){ puladas++; return; }
+          existentes[codNorm] = true;
 
           var poco = mapa.poco ? String(valorCelula(row.getCell(mapa.poco).value)||'').trim() : '';
           var dataIni = mapa.dataInstIni ? dataParaISO(row.getCell(mapa.dataInstIni).value) : '';
@@ -2360,10 +2350,7 @@
         }
         renderSessionList();
         setActiveRailItem(currentDocId);
-        var puladasTxt = puladas
-          ? ' ('+puladas+' já existia'+(puladas===1?'':'m')+(puladasOutroProjeto ? ', sendo '+puladasOutroProjeto+' em outro projeto,' : '')+' e foram puladas)'
-          : '';
-        toast(importadas+' sondagem(ns) importada(s)'+puladasTxt+'.');
+        toast(importadas+' sondagem(ns) importada(s)'+(puladas?' ('+puladas+' já existiam e foram puladas)':'')+'.');
       }).catch(function(err){
         console.error(err);
         toast('Não foi possível ler esse arquivo. Confira se é um .xlsx no formato do modelo.');
@@ -2743,10 +2730,31 @@
     $('#auth-tab-login').classList.toggle('is-active', mode==='login');
     $('#auth-tab-signup').classList.toggle('is-active', mode==='signup');
     $('#auth-name-field').hidden = mode!=='signup';
+    if($('#auth-tipo-field')) $('#auth-tipo-field').hidden = mode!=='signup';
+    atualizarTipoConta();
     $('#auth-submit').textContent = mode==='login' ? 'Entrar' : 'Criar conta';
     $('#auth-error').hidden = true;
     $('#auth-error').classList.remove('is-info');
   }
+  // Tipo de conta no cadastro: Administrador cria a empresa dele e já entra;
+  // Técnico fica aguardando o administrador adicionar pela tela Equipe do WebGeo.
+  function tipoConta(){
+    var r = document.querySelector('input[name="auth-tipo"]:checked');
+    return r ? r.value : 'tecnico';
+  }
+  function atualizarTipoConta(){
+    // se o index.html publicado ainda for o antigo (sem estes campos), não faz nada: a tela não pode travar
+    if(!$('#auth-empresa-field') || !$('#auth-tipo-dica')) return;
+    var adm = authMode==='signup' && tipoConta()==='admin';
+    $('#auth-empresa-field').hidden = !adm;
+    $('#auth-empresa').required = adm;
+    $('#auth-tipo-dica').textContent = tipoConta()==='admin'
+      ? 'Cria a sua empresa e você entra como administrador. Depois você adiciona a equipe pela tela Equipe do WebGeo.'
+      : 'Você entra numa empresa que já usa o sistema. O administrador dela libera o seu acesso pela tela Equipe do WebGeo.';
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('input[name="auth-tipo"]'), function(r){
+    r.addEventListener('change', atualizarTipoConta);
+  });
   $('#auth-tab-login').addEventListener('click', function(){ setAuthMode('login'); });
   $('#auth-tab-signup').addEventListener('click', function(){ setAuthMode('signup'); });
 
@@ -2759,7 +2767,11 @@
     $('#auth-submit').disabled = true;
     var action = authMode==='login'
       ? sb.auth.signInWithPassword({ email: email, password: password })
-      : sb.auth.signUp({ email: email, password: password, options: { data: { full_name: fullName } } });
+      : sb.auth.signUp({ email: email, password: password, options: { data: {
+          full_name: fullName,
+          tipo_conta: tipoConta(),
+          empresa: (tipoConta()==='admin' && $('#auth-empresa')) ? $('#auth-empresa').value.trim() : ''
+        } } });
     action.then(function(res){
       if(res.error) throw res.error;
       if(authMode==='signup' && res.data && !res.data.session){
